@@ -10,6 +10,7 @@
 import { HttpService } from '@nestjs/axios';
 import { Injectable } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { OnEvent } from '@nestjs/event-emitter/dist/decorators';
 import {
   ActionRowBuilder,
   AttachmentBuilder,
@@ -27,12 +28,14 @@ import {
 } from 'discord.js';
 import { Request, Response } from 'express';
 import { I18nService } from 'nestjs-i18n';
-import fetch from 'node-fetch';
 
+import { Attachment } from '@/attachment/schemas/attachment.schema';
 import { AttachmentService } from '@/attachment/services/attachment.service';
 import { ChannelService } from '@/channel/channel.service';
 import ChannelHandler from '@/channel/lib/Handler';
 import { SubscriberCreateDto } from '@/chat/dto/subscriber.dto';
+import { WithUrl } from '@/chat/schemas/types/attachment';
+import { ButtonType } from '@/chat/schemas/types/button';
 import {
   OutgoingMessageFormat,
   StdOutgoingAttachmentMessage,
@@ -49,12 +52,15 @@ import { SubscriberService } from '@/chat/services/subscriber.service';
 import { MenuService } from '@/cms/services/menu.service';
 import { LanguageService } from '@/i18n/services/language.service';
 import { LoggerService } from '@/logger/logger.service';
+import { Setting } from '@/setting/schemas/setting.schema';
 import { SettingService } from '@/setting/services/setting.service';
+import { THydratedDocument } from '@/utils/types/filter.types';
 import { SocketRequest } from '@/websocket/utils/socket-request';
 import { SocketResponse } from '@/websocket/utils/socket-response';
 
 import { DiscordBotService } from './discord-api';
 import { DISCORD_CHANNEL_NAME } from './settings';
+import { Discord } from './types';
 import DiscordEventWrapper from './wrapper';
 
 @Injectable()
@@ -84,10 +90,6 @@ export class DiscordChannelHandler extends ChannelHandler<
     return __dirname;
   }
 
-  getChannel(): typeof DISCORD_CHANNEL_NAME {
-    return DISCORD_CHANNEL_NAME;
-  }
-
   async init(): Promise<void> {
     try {
       this.logger.debug('Discord Channel Handler : initialization ...');
@@ -95,6 +97,7 @@ export class DiscordChannelHandler extends ChannelHandler<
       this.discordBotService = new DiscordBotService(
         bot_token,
         app_id,
+        this.menuService,
         this.logger,
       );
       await this.discordBotService.init();
@@ -129,19 +132,39 @@ export class DiscordChannelHandler extends ChannelHandler<
     }
   }
 
+  /**
+   * Updates the bot token for the Discord Bot Application
+   *
+   * @param setting
+   */
+  @OnEvent('hook:discord_channel:bot_token')
+  async updateBotToken(setting: THydratedDocument<Setting>) {
+    this.discordBotService.setBotToken(setting.value);
+  }
+
+  /**
+   * Updates the app id for the Discord Bot Application
+   *
+   * @param setting
+   */
+  @OnEvent('hook:discord_channel:app_id')
+  async updateAppId(setting: THydratedDocument<Setting>) {
+    this.discordBotService.setAppId(setting.value);
+  }
+
   async handleSlashCommand(
     interaction: ChatInputCommandInteraction,
   ): Promise<void> {
     if (!interaction.isChatInputCommand()) return;
-    if (!interaction.guild) {
-      await interaction.reply({
-        content:
-          'This command can only be used in a server, not in a private message.',
-        ephemeral: true,
-      });
-      return;
-    }
     if (interaction.commandName === 'chat') {
+      if (!interaction.guild) {
+        await interaction.reply({
+          content:
+            'This command can only be used in a server, not in a private message.',
+          ephemeral: true,
+        });
+        return;
+      }
       // Ignore wait for slash command interactions
       interaction.deferReply();
       this.emitMessageEvent(interaction);
@@ -180,10 +203,13 @@ export class DiscordChannelHandler extends ChannelHandler<
       const isSelected = component.customId === interaction.customId;
       const discordButton = new ButtonBuilder()
         .setLabel(component.label)
-        .setCustomId(component.customId)
         .setStyle(component.style)
         .setDisabled(true);
       isSelected && discordButton.setEmoji('✅');
+      component.customId && discordButton.setCustomId(component.customId);
+      if (component.url) {
+        discordButton.setURL(component.url).setDisabled(false);
+      }
 
       newRow.addComponents(discordButton);
     });
@@ -191,13 +217,6 @@ export class DiscordChannelHandler extends ChannelHandler<
     await interaction.editReply({
       ...interaction,
       components: [newRow],
-    });
-  }
-
-  private async _disableTextInput(message: Message): Promise<void> {
-    // Disable text inputs
-    await message.edit({
-      components: [],
     });
   }
 
@@ -236,125 +255,152 @@ export class DiscordChannelHandler extends ChannelHandler<
   async sendMessage(
     event: DiscordEventWrapper,
     envelope: StdOutgoingEnvelope,
-    options: any,
+    options: BlockOptions,
     context: any,
   ): Promise<{ mid: string }> {
     try {
       this.logger.log('Discord Channel Handler: Sending message ...');
-      debugger;
       const client = this.discordBotService.getClient();
       const handler: DiscordChannelHandler = this;
-      const originalEvent:
-        | ButtonInteraction
-        | ChatInputCommandInteraction
-        | Message = event.getOriginalEvent();
+      const originalEvent: any = event.getOriginalEvent();
 
       const payload = await handler._formatMessage(envelope, options);
       const message = event.getOriginalMessageContent();
 
+      if (this.checkListType(envelope.format, payload)) {
+        const discordChannel = await client.channels.fetch(
+          event.getRecipientForeignId(),
+        );
+        let lastResId: string;
+        for (const [embed, component, file] of payload.embeds.map(
+          (embed: EmbedBuilder, i: number) => [
+            embed,
+            payload.components[i],
+            payload.files[i],
+          ],
+        )) {
+          const resBody = {
+            content: '\u200B',
+            embeds: [embed],
+          };
+          component && (resBody['components'] = [component]);
+          file && (resBody['files'] = [file]);
+          const res = await (discordChannel as TextChannel).send(resBody);
+          lastResId = res.id;
+        }
+        return { mid: lastResId };
+      }
       if (originalEvent.channel.type === ChannelType.GuildText) {
         // Create embed to show user's message
-        const embed = new EmbedBuilder()
-          .setColor(0x6cc853)
-          .addFields(
-            {
-              name: `${event.getSender().first_name}:`,
-              value: message,
-            },
-            {
-              name: 'Hexabot:',
-              value: payload?.content || '\u200B',
-            },
-          )
-          .setAuthor({
-            name: '\u200B',
-            iconURL: event.getProfile().avatarUrl,
-          });
+        const embed = new EmbedBuilder().setColor(0x6cc853).addFields(
+          {
+            name: `${event.getSender().first_name} - ${event.getSender().last_name}`,
+            value: message,
+          },
+          {
+            name: 'Hexabot',
+            value: payload?.content || '\u200B',
+          },
+        );
+
         if (payload.files) {
           embed.setImage('attachment://' + payload.files[0].name);
         }
-
-        const res = await (
-          originalEvent as ButtonInteraction | ChatInputCommandInteraction
-        ).followUp({
-          embeds: [embed],
-          components: payload.components,
-          files: payload.files,
-        });
-        return { mid: res.id };
-      }
-
-      if (originalEvent.channel.type === ChannelType.DM) {
-        const channel = await client.channels.fetch(
-          event.getRecipientForeignId(),
-        );
-        if (channel?.isTextBased()) {
-          const res: any = await (channel as TextChannel).send(payload);
+        if ('followUp' in originalEvent) {
+          const res = await originalEvent.followUp({
+            embeds: [embed],
+            components: payload.components,
+            files: payload.files,
+          });
           return { mid: res.id };
         }
       }
 
-      // return { mid: '' };
+      if (originalEvent.channel.type === ChannelType.DM) {
+        const discordChannel = await client.channels.fetch(
+          event.getRecipientForeignId(),
+        );
 
-      // const channelId = event.getRecipientForeignId();
-      // const channel = await this.client.channels.fetch(channelId);
-
-      // if (channel?.isTextBased()) {
-      //   const res: any = await (channel as TextChannel).send(message);
-      //   return { mid: res.id };
-      // } else {
-      //   this.logger.log('Channel not found or is not text-based');
-      //   return { mid: '' };
-      // }
+        if (discordChannel?.isTextBased()) {
+          const res: Message = await (discordChannel as TextChannel).send(
+            payload,
+          );
+          return { mid: res.id };
+        }
+      }
     } catch (error) {
       this.logger.error('Failed to send message:', error);
       throw error;
     }
   }
 
-  async getUserData(event: DiscordEventWrapper): Promise<SubscriberCreateDto> {
-    const profile = event.getProfile();
-
-    // Save profile picture locally if it doesn't exist
-    fetch(profile.avatarUrl, {})
-      .then(async (res) => {
-        await this.attachmentService.uploadProfilePic(
-          res,
-          profile.id + '.jpeg',
-        );
-      })
-      .catch((err: Error) => {
-        // Serve a generic picture instead depending on the file existence
-        this.logger.error(
-          'Discord Channel Handler : Error while fetching profile picture',
-          err,
-        );
-      });
-
-    const defautLanguage = await this.languageService.getDefaultLanguage();
-
-    return {
-      foreign_id: event.getSenderForeignId(),
-      first_name: profile.name,
-      last_name: 'Discord',
-      gender: '',
-      channel: {
-        name: this.getChannel(),
-        ...event.getChannelData(),
-      },
-      assignedAt: null,
-      assignedTo: null,
-      labels: [],
-      locale: profile.locale,
-      language: defautLanguage.code,
-      timezone: 0,
-      country: '',
-      lastvisit: new Date(),
-      retainedFrom: new Date(),
-    };
+  checkListType(
+    messageFormat: OutgoingMessageFormat,
+    payload: Message,
+  ): boolean {
+    return (
+      (messageFormat === OutgoingMessageFormat.list ||
+        messageFormat === OutgoingMessageFormat.carousel) &&
+      payload.embeds.length > 1
+    );
   }
 
-  _textFormat(message: StdOutgoingTextMessage, options?: any): any {
+  async getUserData(event: DiscordEventWrapper): Promise<SubscriberCreateDto> {
+    try {
+      const profile = event.getProfile();
+      if (profile.avatarUrl) {
+        const avatar = await this.httpService.axiosRef({
+          url: profile.avatarUrl,
+          method: 'GET',
+          responseType: 'arraybuffer',
+        });
+
+        await this.attachmentService.uploadProfilePic(
+          avatar.data,
+          profile.id + '.jpeg',
+        );
+      }
+
+      const defautLanguage = await this.languageService.getDefaultLanguage();
+      const profileName = event.isDM()
+        ? {
+            first_name: profile.username,
+            last_name: '\u200B',
+          }
+        : {
+            first_name: profile.serverName,
+            last_name: profile.roomName,
+          };
+      return {
+        foreign_id: event.getSenderForeignId(),
+        ...profileName,
+        gender: '',
+        channel: {
+          name: this.getName(),
+        },
+        assignedAt: null,
+        assignedTo: null,
+        labels: [],
+        locale: profile.locale,
+        language: defautLanguage.code,
+        timezone: 0,
+        country: '',
+        lastvisit: new Date(),
+        retainedFrom: new Date(),
+      };
+    } catch (error) {
+      this.logger.error(
+        'Discord Channel Handler : Error while fetching user data',
+        error,
+      );
+      throw error;
+    }
+  }
+
+  _textFormat(
+    message: StdOutgoingTextMessage,
+    options?: BlockOptions,
+  ): Discord.OutgoingMessageBase {
     return {
       content: message.text,
     };
@@ -362,8 +408,8 @@ export class DiscordChannelHandler extends ChannelHandler<
 
   _quickRepliesFormat(
     message: StdOutgoingQuickRepliesMessage,
-    _options?: any,
-  ): any {
+    _options?: BlockOptions,
+  ): Discord.OutgoingMessageBase {
     const row = new ActionRowBuilder();
     message.quickReplies.forEach((button) => {
       const discordButton = new ButtonBuilder();
@@ -382,7 +428,7 @@ export class DiscordChannelHandler extends ChannelHandler<
   _buttonsFormat(
     message: StdOutgoingButtonsMessage,
     _options: BlockOptions,
-  ): any {
+  ): Discord.OutgoingMessageBase {
     const buttonStyles = [
       ButtonStyle.Secondary,
       ButtonStyle.Success,
@@ -405,16 +451,11 @@ export class DiscordChannelHandler extends ChannelHandler<
     };
   }
 
-  async _attachmentFormat(
-    message: StdOutgoingAttachmentMessage<any>,
-    options?: any,
-  ): Promise<any> {
-    const fileStream = await this.attachmentService.download(
-      message.attachment.payload,
-    );
-    const attachment = new AttachmentBuilder(fileStream.getStream()).setName(
-      'image.png',
-    );
+  _attachmentFormat(
+    message: StdOutgoingAttachmentMessage<WithUrl<Attachment>>,
+    options?: BlockOptions,
+  ): Discord.OutgoingMessageBase {
+    const attachment = new AttachmentBuilder(message.attachment.payload.url);
 
     if (message.quickReplies && message.quickReplies.length > 0) {
       return {
@@ -427,15 +468,91 @@ export class DiscordChannelHandler extends ChannelHandler<
     };
   }
 
-  _formatElements(data: any[], options: any): any[] {
-    return [];
+  _listFormat(
+    message: StdOutgoingListMessage,
+    options: BlockOptions,
+  ): Discord.OutgoingMessageBase {
+    const res = this._carouselFormat(message, options);
+    res.components.push(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setLabel('View More')
+          .setCustomId('View More')
+          .setStyle(ButtonStyle.Primary),
+      ),
+    );
+    return res;
   }
 
-  _listFormat(message: StdOutgoingListMessage, options: any): any {
-    return {};
-  }
+  _carouselFormat(
+    message: StdOutgoingListMessage,
+    options: BlockOptions,
+  ): Discord.OutgoingMessageBase {
+    const embeds = [];
+    const rows = [];
+    const attachments: AttachmentBuilder[] = [];
 
-  _carouselFormat(message: StdOutgoingListMessage, options: any): any {
-    return {};
+    message.elements.forEach((element) => {
+      const embed = new EmbedBuilder().setTitle(element.title);
+      const row = new ActionRowBuilder();
+
+      if (
+        message.options.fields.subtitle &&
+        element[message.options.fields.subtitle]
+      ) {
+        embed.setDescription(element[message.options.fields.subtitle]);
+      }
+
+      if (message.options.fields.url && element[message.options.fields.url]) {
+        embed.setURL(element[message.options.fields.url]);
+      }
+
+      if (
+        message.options.fields.image_url &&
+        element[message.options.fields.image_url]
+      ) {
+        const url = element[message.options.fields.image_url].payload.url;
+        const attachmentName = `image-${Date.now()}.png`;
+        const attachment = new AttachmentBuilder(url, {
+          name: attachmentName,
+        });
+        attachments.push(attachment);
+        // Set the image in the embed using the attachment name
+        embed.setImage(`attachment://${attachmentName}`);
+      }
+
+      if (message.options.buttons) {
+        message.options.buttons.forEach((button) => {
+          const discordButton = new ButtonBuilder()
+            .setLabel(button.title)
+            .setStyle(
+              button.type === ButtonType.web_url
+                ? ButtonStyle.Link
+                : ButtonStyle.Primary,
+            );
+
+          if (
+            button.type === ButtonType.web_url &&
+            message.options.fields.url &&
+            element[message.options.fields.url]
+          ) {
+            discordButton.setURL(element[message.options.fields.url]);
+          } else if (button.type === ButtonType.postback) {
+            discordButton.setCustomId(button.payload);
+          }
+
+          row.addComponents(discordButton);
+        });
+        rows.push(row);
+      }
+
+      embeds.push(embed);
+    });
+
+    return {
+      embeds: [...embeds],
+      components: [...rows],
+      files: attachments,
+    };
   }
 }

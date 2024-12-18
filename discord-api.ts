@@ -17,6 +17,7 @@ import {
   SlashCommandBuilder,
 } from 'discord.js';
 
+import { MenuService } from '@/cms/services/menu.service';
 import { LoggerService } from '@/logger/logger.service';
 
 export class DiscordBotService {
@@ -25,8 +26,9 @@ export class DiscordBotService {
   private rest: REST;
 
   constructor(
-    private readonly botToken: string,
-    private readonly appId: string,
+    private botToken: string,
+    private appId: string,
+    private readonly menuService: MenuService,
     private readonly logger: LoggerService,
   ) {
     // Initialize the Discord client
@@ -49,6 +51,9 @@ export class DiscordBotService {
     // Register slash commands
     await this.registerSlashCommands();
 
+    // Destroy the client if it's already running
+    await this.client.destroy();
+
     // Log in to the Discord bot account using the token
     await this.client.login(this.botToken);
 
@@ -58,27 +63,37 @@ export class DiscordBotService {
     });
   }
 
+  setBotToken(bot_token: string) {
+    this.logger.verbose('Bot token updated', 'DiscordBotService');
+    this.botToken = bot_token;
+    this.init();
+  }
+
+  setAppId(app_id: string) {
+    this.logger.verbose('App ID updated', 'DiscordBotService');
+    this.appId = app_id;
+    this.init();
+  }
+
   private async registerSlashCommands(): Promise<void> {
     this.rest = new REST({ version: '10' }).setToken(this.botToken);
 
-    const commands = [
-      new SlashCommandBuilder()
-        .setName('chat')
-        .setDescription('Start a conversation with the bot')
-        .addStringOption((option) =>
-          option
-            .setName('message')
-            .setDescription('Your message to the bot')
-            .setRequired(true),
-        )
-        .setDefaultMemberPermissions(PermissionFlagsBits.SendMessages),
-    ];
+    const chatCommand = new SlashCommandBuilder()
+      .setName('chat')
+      .setDescription('Start a conversation with the bot')
+      .addStringOption((option) =>
+        option
+          .setName('message')
+          .setDescription('Your message to the bot')
+          .setRequired(true),
+      )
+      .setDefaultMemberPermissions(PermissionFlagsBits.SendMessages);
 
     try {
       this.logger.log('Started refreshing application (/) commands.');
 
       await this.rest.put(Routes.applicationCommands(this.appId), {
-        body: commands,
+        body: [chatCommand],
       });
 
       this.logger.log('Successfully registered application (/) commands.');

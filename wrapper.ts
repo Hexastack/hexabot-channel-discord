@@ -8,6 +8,7 @@
 
 import {
   ButtonInteraction,
+  ChannelType,
   ChatInputCommandInteraction,
   Message,
 } from 'discord.js';
@@ -16,6 +17,7 @@ import EventWrapper from '@/channel/lib/EventWrapper';
 import {
   AttachmentForeignKey,
   AttachmentPayload,
+  FileType,
 } from '@/chat/schemas/types/attachment';
 import {
   IncomingMessageType,
@@ -24,14 +26,10 @@ import {
 import { LoggerService } from '@/logger/logger.service';
 
 import { DiscordChannelHandler } from './index.channel';
+import { DISCORD_CHANNEL_NAME } from './settings';
 import { Discord } from './types';
 
 type DiscordEventAdapter =
-  | {
-      eventType: StdEventType.unknown;
-      messageType: never;
-      raw: any;
-    }
   | {
       eventType: StdEventType.message;
       messageType: IncomingMessageType.postback;
@@ -50,53 +48,78 @@ type DiscordEventAdapter =
 
 export default class DiscordEventWrapper extends EventWrapper<
   DiscordEventAdapter,
-  ButtonInteraction | ChatInputCommandInteraction | Message
+  Discord.Event,
+  typeof DISCORD_CHANNEL_NAME
 > {
   protected readonly logger: LoggerService;
 
-  constructor(
-    handler: DiscordChannelHandler,
-    event: ButtonInteraction | ChatInputCommandInteraction | Message,
-  ) {
+  constructor(handler: DiscordChannelHandler, event: Discord.Event) {
     super(handler, event);
   }
 
-  _init(
-    event: ButtonInteraction | ChatInputCommandInteraction | Message,
-  ): void {
-    if (event instanceof Message) {
-      this._adapter.eventType = StdEventType.message;
-      this._adapter.messageType = IncomingMessageType.message;
-
-      this._adapter.raw = {
-        original: event,
-        id: event.id,
-        sender: {
-          id: event.author.id,
-          avatarUrl: event.author.displayAvatarURL(),
-          name: event.author.displayName,
-        },
-        recipient: {
-          id: event.channelId,
-        },
-        timestamp: event.createdTimestamp,
-        message: event.content,
+  _init(event: Discord.Event): void {
+    this._adapter.eventType = StdEventType.message;
+    // Common properties
+    this._adapter.raw = {
+      ...this._adapter.raw,
+      original: event,
+      id: event.id,
+      recipient: {
+        id: event.channel.id,
+        name: DISCORD_CHANNEL_NAME,
+        type: event.channel.type,
+      },
+    };
+    // Set the sender based on the event channel type
+    if (event.channel.type === ChannelType.GuildText) {
+      this._adapter.raw.sender = {
+        id: event.channel.id,
+        avatarUrl: event.channel.guild.iconURL(),
+        serverName: event.channel.guild.name,
+        roomName: event.channel.name,
+        type: ChannelType.GuildText,
       };
-    } else if (event.isChatInputCommand()) {
-      this._adapter.eventType = StdEventType.message;
+    } else if (event.channel.type === ChannelType.DM) {
+      if (event instanceof Message) {
+        this._adapter.raw.sender = {
+          id: event.channel.id,
+          avatarUrl: event.author.displayAvatarURL(),
+          username: event.author.username,
+          type: ChannelType.DM,
+        };
+      } else if (event instanceof ButtonInteraction) {
+        this._adapter.raw.sender = {
+          id: event.channelId,
+          avatarUrl: event.user.displayAvatarURL(),
+          username: event.user.username,
+          type: ChannelType.DM,
+        };
+      }
+    }
+
+    // Set message properties based on the event type
+    if (event instanceof Message) {
       this._adapter.messageType = IncomingMessageType.message;
 
       this._adapter.raw = {
-        original: event,
-        id: event.id,
-        sender: {
-          id: event.user.id,
-          avatarUrl: event.user.displayAvatarURL(),
-          name: event.user.displayName,
-        },
-        recipient: {
-          id: event.channelId,
-        },
+        ...this._adapter.raw,
+        message: event.content,
+
+        timestamp: event.createdTimestamp,
+      };
+
+      if (event.attachments.size > 0) {
+        this._adapter.raw = {
+          ...this._adapter.raw,
+          attachments: event.attachments,
+        };
+      }
+    } else if (event instanceof ChatInputCommandInteraction) {
+      this._adapter.messageType = IncomingMessageType.message;
+
+      this._adapter.raw = {
+        ...this._adapter.raw,
+
         timestamp: event.createdTimestamp,
         command: {
           name: event.commandName,
@@ -104,24 +127,13 @@ export default class DiscordEventWrapper extends EventWrapper<
             message: event.options.getString('message', true),
           },
         },
-        channelId: event.channelId,
-        guildId: event.guildId,
       };
-    } else if (event.isButton()) {
-      this._adapter.eventType = StdEventType.message;
+    } else if (event instanceof ButtonInteraction) {
       this._adapter.messageType = IncomingMessageType.postback;
 
       this._adapter.raw = {
-        original: event,
-        id: event.id,
-        sender: {
-          id: event.user.id,
-          avatarUrl: event.user.displayAvatarURL(),
-          name: event.user.displayName,
-        },
-        recipient: {
-          id: event.channelId,
-        },
+        ...this._adapter.raw,
+
         timestamp: event.createdTimestamp,
         interaction: {
           customId: event.customId,
@@ -135,10 +147,7 @@ export default class DiscordEventWrapper extends EventWrapper<
     return this._adapter.raw.id;
   }
 
-  getOriginalEvent():
-    | ButtonInteraction
-    | ChatInputCommandInteraction
-    | Message {
+  getOriginalEvent(): Discord.Event {
     return this._adapter.raw.original;
   }
 
@@ -152,16 +161,16 @@ export default class DiscordEventWrapper extends EventWrapper<
     if ('message' in this._adapter.raw) return this._adapter.raw.message;
   }
 
+  isDM(): boolean {
+    return this._adapter.raw.sender.type === ChannelType.DM;
+  }
+
   getProfile(): any {
     return this._adapter.raw.sender;
   }
 
   getChannelData(): any {
-    return {
-      channelId: this._adapter.raw.recipient.id,
-      guildId:
-        'guildId' in this._adapter.raw ? this._adapter.raw.guildId : undefined,
-    };
+    return this._adapter.raw.recipient;
   }
 
   getSenderForeignId(): string {
@@ -217,7 +226,18 @@ export default class DiscordEventWrapper extends EventWrapper<
   }
 
   getAttachments(): AttachmentPayload<AttachmentForeignKey>[] {
-    return []; // No attachments in slash commands currently
+    if ('attachments' in this._adapter.raw) {
+      return Array.from(this._adapter.raw.attachments.values()).map(
+        (attachment) => ({
+          type: attachment.contentType.split('/')[0] as FileType,
+          payload: {
+            url: attachment.url,
+            attachment_id: attachment.id,
+          },
+        }),
+      );
+    }
+    return [];
   }
 
   getDeliveredMessages(): string[] {

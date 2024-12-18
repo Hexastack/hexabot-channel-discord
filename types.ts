@@ -7,40 +7,46 @@
  */
 
 import {
+  Attachment,
   AttachmentBuilder,
+  ButtonInteraction,
+  Channel,
+  ChannelType,
+  ChatInputCommandInteraction,
+  Collection,
   InteractionResponse,
   MessageCreateOptions,
+  StringSelectMenuInteraction,
 } from 'discord.js';
 
 export namespace Discord {
+  interface BaseDiscordEvent {
+    id: string;
+    channel?: Channel | null;
+    guildId?: string | null;
+  }
+
+  export type Event = IncomingMessage &
+    (
+      | (ButtonInteraction & BaseDiscordEvent)
+      | (ChatInputCommandInteraction & BaseDiscordEvent)
+      | (StringSelectMenuInteraction & BaseDiscordEvent)
+      | (Message & BaseDiscordEvent)
+    );
+
   export enum SettingLabel {
     bot_token = 'bot_token',
     app_id = 'app_id',
   }
 
-  export enum AttachmentType {
-    audio = 'audio',
-    file = 'file',
-    image = 'image',
-    video = 'video',
-    unknown = 'unknown',
-  }
-
-  export interface Attachment {
-    type: AttachmentType;
-    payload: {
-      url?: string;
-      title?: string;
-      attachment?: AttachmentBuilder;
-    };
-  }
-
   export interface MessagingEvent {
     sender: {
-      id: string; // Discord User ID
-    };
-    recipient: {
-      id: string; // Channel ID
+      id: string;
+      avatarUrl?: string;
+      type: ChannelType.DM | ChannelType.GuildText;
+      username?: string;
+      serverName?: string;
+      roomName?: string;
     };
     timestamp: number;
   }
@@ -48,14 +54,11 @@ export namespace Discord {
   // For slash commands
   export interface IncomingSlashCommand {
     command: {
-      id: string;
       name: string;
       options: {
         message: string;
       };
     };
-    channelId: string;
-    guildId?: string;
   }
 
   // For button interactions
@@ -67,9 +70,8 @@ export namespace Discord {
   }
 
   export interface IncomingMessageComponent {
-    type: number;
-    custom_id: string;
-    message: any;
+    message?: string;
+    attachments?: Collection<string, Attachment>;
   }
 
   export type IncomingMessage = MessagingEvent &
@@ -77,16 +79,23 @@ export namespace Discord {
       | IncomingSlashCommand
       | IncomingButtonInteraction
       | IncomingMessageComponent
-    );
+    ) & {
+      original: Event;
+      id: string;
+      recipient: Recipient;
+    };
 
   export interface OutgoingMessageBase {
     content?: string;
-    components?: any[]; // Discord.js button components
+    components?: any[];
     files?: AttachmentBuilder[];
+    embeds?: any[];
   }
 
   export type Recipient = {
-    id: string; // Channel ID
+    id: string;
+    name: string;
+    type: ChannelType;
   };
 
   export interface OutgoingMessage {
