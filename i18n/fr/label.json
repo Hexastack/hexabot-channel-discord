@@ -1,4 +1,4 @@
 {
-  "bot_token": "Token",
-  "app_id": "ID de l'application"
+  "app_id": "ID de l'application",
+  "bot_token": "Token"
 }

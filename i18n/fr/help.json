@@ -1,1 +1,4 @@
-{}
+{
+  "app_id": "Entrez l'ID de votre application Discord ici. Vous pouvez le trouver dans la section Informations Générales de votre application sur le Portail Développeur Discord.",
+  "bot_token": "Entrez le token de votre bot ici. Vous pouvez le trouver dans la section Bot de votre application sur le Portail Développeur Discord."
+}

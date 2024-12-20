@@ -1,1 +1,4 @@
-{}
+{
+  "app_id": "Enter your Discord Application ID here. You can find it in the General Information section of your application on the Discord Developer Portal.",
+  "bot_token": "Enter your bot's token here. You can find it in the Bot section of your application on the Discord Developer Portal."
+}
