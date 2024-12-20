@@ -74,6 +74,13 @@ export default class DiscordEventWrapper extends EventWrapper<
     });
   }
 
+  /**
+   * Initializes the Discord event adapter with the provided incoming event.
+   * Determines the event type and message type based on the structure of the event.
+   *
+   * @param event - The incoming event from Discord.
+   * @return - Updates the adapter with the processed event details.
+   */
   _init(event: Discord.IncomingEvent): void {
     if ('customId' in event) {
       this._adapter.eventType = StdEventType.message;
@@ -93,6 +100,13 @@ export default class DiscordEventWrapper extends EventWrapper<
     this._adapter.raw = event;
   }
 
+  /**
+   * Retrieves the unique identifier for the current event.
+   * If the message type is `attachments`, a prefixed ID is returned to handle
+   * cases where multiple events are emitted for attachments.
+   *
+   * @return The unique identifier for the event, with a prefix if the message type is `attachments`.
+   */
   getId(): string {
     if (this.getMessageType() === IncomingMessageType.attachments) {
       // Since we emit 2 events whenever we receive attachments
@@ -101,6 +115,12 @@ export default class DiscordEventWrapper extends EventWrapper<
     return this._adapter.raw.id;
   }
 
+  /**
+   * Retrieves sender information based on the event's channel type.
+   * The sender's information includes avatar URL, first name, and last name.
+   *
+   * @return An object containing the sender's details
+   */
   getSenderInfo(): { avatarUrl: string; firstName: string; lastName: string } {
     const event = this._adapter.raw;
     // Set the sender based on the event channel type
@@ -129,14 +149,32 @@ export default class DiscordEventWrapper extends EventWrapper<
     }
   }
 
+  /**
+   * Retrieves the foreign ID of the sender.
+   * This ID corresponds to the channel ID associated with the event.
+   *
+   * @return The foreign ID of the sender.
+   */
   getSenderForeignId(): string {
     return this._adapter.raw.channel.id;
   }
 
+  /**
+   * Retrieves the foreign ID of the recipient.
+   * This ID corresponds to the channel ID associated with the event.
+   * Used specifically in cases of an echo event.
+   *
+   * @return The foreign ID of the recipient.
+   */
   getRecipientForeignId(): string {
     return this._adapter.raw.channel.id;
   }
 
+  /**
+   * Retrieves the payload associated with the current event.
+   *
+   * @return The payload of the event
+   */
   getPayload(): Payload | string | undefined {
     if (this._adapter.messageType === IncomingMessageType.postback) {
       return this._adapter.raw.customId;
@@ -155,6 +193,11 @@ export default class DiscordEventWrapper extends EventWrapper<
     return undefined;
   }
 
+  /**
+   * Retrieves the standardized incoming message based on the event type.
+   *
+   * @return A `StdIncomingMessage` object containing the message
+   */
   getMessage(): StdIncomingMessage {
     if (this._adapter.messageType === IncomingMessageType.message) {
       return {
@@ -174,6 +217,12 @@ export default class DiscordEventWrapper extends EventWrapper<
     throw new Error('Unknown incoming message type');
   }
 
+  /**
+   * Retrieves the list of attachments associated with the current event.
+   * Each attachment includes its type, URL, and a unique attachment ID.
+   *
+   * @return An array of `AttachmentPayload` objects
+   */
   getAttachments(): AttachmentPayload<AttachmentForeignKey>[] {
     if (
       this._adapter.messageType === IncomingMessageType.attachments &&
@@ -192,10 +241,22 @@ export default class DiscordEventWrapper extends EventWrapper<
     return [];
   }
 
+  /**
+   * Retrieves the list of delivered message IDs.
+   * Since Discord does not support delivery receipts, this function always returns an empty array.
+   *
+   * @return An empty array, as Discord does not provide delivery receipt functionality.
+   */
   getDeliveredMessages(): string[] {
     return []; // Discord doesn't have delivery receipts
   }
 
+  /**
+   * Retrieves the timestamp of the event creation as the watermark.
+   * This timestamp represents the time when the event was created on Discord.
+   *
+   * @return A number representing the event's creation timestamp in milliseconds since the Unix epoch.
+   */
   getWatermark(): number {
     return this._adapter.raw.createdTimestamp;
   }

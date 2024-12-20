@@ -15,7 +15,10 @@ import {
   ActionRowBuilder,
   AttachmentBuilder,
   ButtonBuilder,
+  Client,
   EmbedBuilder,
+  REST,
+  SlashCommandBuilder,
 } from 'discord.js';
 import { Request, Response } from 'express';
 import { I18nService } from 'nestjs-i18n';
@@ -44,13 +47,10 @@ import { SubscriberService } from '@/chat/services/subscriber.service';
 import { MenuService } from '@/cms/services/menu.service';
 import { LanguageService } from '@/i18n/services/language.service';
 import { LoggerService } from '@/logger/logger.service';
-import { Setting } from '@/setting/schemas/setting.schema';
 import { SettingService } from '@/setting/services/setting.service';
-import { THydratedDocument } from '@/utils/types/filter.types';
 import { SocketRequest } from '@/websocket/utils/socket-request';
 import { SocketResponse } from '@/websocket/utils/socket-response';
 
-import { DiscordBotService } from './discord-api';
 import { DISCORD_CHANNEL_NAME } from './settings';
 import { Discord } from './types';
 import DiscordEventWrapper from './wrapper';
@@ -59,7 +59,8 @@ import DiscordEventWrapper from './wrapper';
 export class DiscordChannelHandler extends ChannelHandler<
   typeof DISCORD_CHANNEL_NAME
 > {
-  private discordBotService: DiscordBotService;
+  // Discord WS client
+  private client: Client;
 
   constructor(
     settingService: SettingService,
@@ -76,7 +77,17 @@ export class DiscordChannelHandler extends ChannelHandler<
     protected readonly httpService: HttpService,
   ) {
     super(DISCORD_CHANNEL_NAME, settingService, channelService, logger);
-    this.logger.setContext('Discord Channel');
+
+    // Initialize the Discord client
+    this.client = new Client({
+      intents: [
+        DiscordTypes.GatewayIntentBits.Guilds,
+        DiscordTypes.GatewayIntentBits.GuildMessages,
+        DiscordTypes.GatewayIntentBits.MessageContent,
+        DiscordTypes.GatewayIntentBits.DirectMessages,
+      ],
+      partials: [DiscordTypes.Partials.Channel],
+    });
   }
 
   getPath(): string {
@@ -86,33 +97,48 @@ export class DiscordChannelHandler extends ChannelHandler<
   async init(): Promise<void> {
     try {
       this.logger.debug('Discord Channel Handler : initialization ...');
-      const { bot_token, app_id } = await this.getSettings();
-      this.discordBotService = new DiscordBotService(
-        bot_token,
-        app_id,
-        this.menuService,
-        this.logger,
-      );
-      await this.discordBotService.init();
+      const settings = await this.getSettings();
 
-      const client = this.discordBotService.getClient();
+      if (!settings.bot_token || !settings.app_id) {
+        this.logger.error(
+          'Make sure that Discord Token and App ID are configured in the settings',
+        );
+        return;
+      }
 
-      // Handle button postbacks
-      client.on(DiscordTypes.Events.InteractionCreate, async (interaction) => {
-        if (interaction.isButton()) {
-          // Ignore wait for button interactions
-          await interaction.deferUpdate();
-          // Disable all buttons after one is clicked
-          await this.disableButtonInteractions(interaction);
+      // Register slash commands
+      await this.registerSlashCommands();
 
-          this.emitEvent(interaction);
-        } else {
-          this.logger.debug('Unhandled interaction ...', interaction);
-        }
+      // Destroy the client if it's already running
+      await this.client.destroy();
+
+      // Log in to the Discord bot account using the token
+      await this.client.login(settings.bot_token);
+
+      // Listen for the ready event
+      this.client.on(DiscordTypes.Events.ClientReady, () => {
+        this.logger.log('Discord bot is ready!');
       });
 
+      // Handle button postbacks
+      this.client.on(
+        DiscordTypes.Events.InteractionCreate,
+        async (interaction) => {
+          if (interaction.isButton()) {
+            // Ignore wait for button interactions
+            await interaction.deferUpdate();
+            // Disable all buttons after one is clicked
+            await this.disableButtonInteractions(interaction);
+
+            this.emitEvent(interaction);
+          } else {
+            this.logger.debug('Unhandled interaction ...', interaction);
+          }
+        },
+      );
+
       // Handle messages
-      client.on(DiscordTypes.Events.MessageCreate, async (message) => {
+      this.client.on(DiscordTypes.Events.MessageCreate, async (message) => {
         try {
           // Let's ignore system messages (pin, new joiners, ..)
           if (message.system) {
@@ -127,7 +153,7 @@ export class DiscordChannelHandler extends ChannelHandler<
 
           if (
             message.channel.type === DiscordTypes.ChannelType.GuildText &&
-            !message.mentions.has(client.user)
+            !message.mentions.has(this.client.user)
           ) {
             this.logger.debug('Ignoring guild message without mention ...');
             return;
@@ -135,7 +161,7 @@ export class DiscordChannelHandler extends ChannelHandler<
 
           // Extract the mention and remove it from the message content
           if (message.channel.type === DiscordTypes.ChannelType.GuildText) {
-            const botMention = `<@${client.user?.id}>`; // Format for the bot mention
+            const botMention = `<@${this.client.user?.id}>`; // Format for the bot mention
             message.content = message.content.replaceAll(botMention, '').trim();
           }
 
@@ -150,23 +176,11 @@ export class DiscordChannelHandler extends ChannelHandler<
   }
 
   /**
-   * Updates the bot token for the Discord Bot Application
-   *
-   * @param setting
-   */
-  @OnEvent('hook:discord_channel:bot_token')
-  async updateBotToken(setting: THydratedDocument<Setting>) {
-    this.discordBotService.setBotToken(setting.value);
-  }
-
-  /**
    * Updates the app id for the Discord Bot Application
-   *
-   * @param setting
    */
-  @OnEvent('hook:discord_channel:app_id')
-  async updateAppId(setting: THydratedDocument<Setting>) {
-    this.discordBotService.setAppId(setting.value);
+  @OnEvent('hook:discord_channel:*')
+  async handleSettingsUpdate() {
+    this.init();
   }
 
   private emitEvent(e: Discord.IncomingEvent): void {
@@ -246,11 +260,10 @@ export class DiscordChannelHandler extends ChannelHandler<
   ): Promise<{ mid: string }> {
     try {
       this.logger.log('Discord Channel Handler: Sending message ...');
-      const client = this.discordBotService.getClient();
 
       const payload = await this._formatMessage(envelope, options);
 
-      const discordChannel = (await client.channels.fetch(
+      const discordChannel = (await this.client.channels.fetch(
         event.getSenderForeignId(),
       )) as unknown as DiscordTypes.TextChannel;
 
@@ -400,10 +413,10 @@ export class DiscordChannelHandler extends ChannelHandler<
     };
   }
 
-  async _attachmentFormat(
+  _attachmentFormat(
     message: StdOutgoingAttachmentMessage<WithUrl<Attachment>>,
     _options?: BlockOptions,
-  ): Promise<Discord.OutgoingMessage> {
+  ): Discord.OutgoingMessage {
     const attachment = message.attachment.payload;
     const file = new AttachmentBuilder(
       Attachment.getAttachmentUrl(attachment.id, attachment.name),
@@ -517,5 +530,34 @@ export class DiscordChannelHandler extends ChannelHandler<
       components: [...rows],
       files: attachments,
     };
+  }
+
+  private async registerSlashCommands(): Promise<void> {
+    try {
+      const settings = await this.getSettings();
+      const rest = new REST({ version: '10' }).setToken(settings.bot_token);
+
+      const chatCommand = new SlashCommandBuilder()
+        .setName('chat')
+        .setDescription('Start a conversation with the bot')
+        .addStringOption((option) =>
+          option
+            .setName('message')
+            .setDescription('Your message to the bot')
+            .setRequired(true),
+        )
+        .setDefaultMemberPermissions(
+          DiscordTypes.PermissionFlagsBits.SendMessages,
+        );
+      this.logger.log('Started refreshing application (/) commands.');
+
+      await rest.put(DiscordTypes.Routes.applicationCommands(settings.app_id), {
+        body: [chatCommand],
+      });
+
+      this.logger.log('Successfully registered application (/) commands.');
+    } catch (error) {
+      this.logger.error('Error registering slash commands:', error);
+    }
   }
 }
