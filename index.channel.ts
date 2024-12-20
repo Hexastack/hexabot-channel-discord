@@ -344,15 +344,6 @@ export class DiscordChannelHandler extends ChannelHandler<
     }
   }
 
-  /**
-   * Fetches user data from the event and constructs a `SubscriberCreateDto` object.
-   * This includes retrieving the user's profile picture, storing it, and setting default values for the subscriber's details.
-   *
-   * @param event - The `DiscordEventWrapper` instance representing the incoming event.
-   *   - Provides access to sender information and channel data.
-   *
-   * @return A promise that resolves to a `SubscriberCreateDto` object
-   */
   async sendListCarouselMessage(
     payload: Discord.OutgoingMessage,
     envelope: StdOutgoingEnvelope,
@@ -392,6 +383,15 @@ export class DiscordChannelHandler extends ChannelHandler<
     return lastResId;
   }
 
+  /**
+   * Fetches user data from the event and constructs a `SubscriberCreateDto` object.
+   * This includes retrieving the user's profile picture, storing it, and setting default values for the subscriber's details.
+   *
+   * @param event - The `DiscordEventWrapper` instance representing the incoming event.
+   *   - Provides access to sender information and channel data.
+   *
+   * @return A promise that resolves to a `SubscriberCreateDto` object
+   */
   async getUserData(event: DiscordEventWrapper): Promise<SubscriberCreateDto> {
     try {
       const foreignId = event.getSenderForeignId();
