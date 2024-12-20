@@ -11,8 +11,12 @@ import { Injectable } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { OnEvent } from '@nestjs/event-emitter/dist/decorators';
 import * as DiscordTypes from 'discord.js';
-import { ActionRowBuilder, AttachmentBuilder, ButtonBuilder, EmbedBuilder } from 'discord.js';
-
+import {
+  ActionRowBuilder,
+  AttachmentBuilder,
+  ButtonBuilder,
+  EmbedBuilder,
+} from 'discord.js';
 import { Request, Response } from 'express';
 import { I18nService } from 'nestjs-i18n';
 
@@ -103,7 +107,7 @@ export class DiscordChannelHandler extends ChannelHandler<
 
           this.emitEvent(interaction);
         } else {
-          this.logger.debug('Unhandled interaction ...', interaction)
+          this.logger.debug('Unhandled interaction ...', interaction);
         }
       });
 
@@ -112,18 +116,20 @@ export class DiscordChannelHandler extends ChannelHandler<
         try {
           // Let's ignore system messages (pin, new joiners, ..)
           if (message.system) {
-            this.logger.debug('Ignoring system message ...', message)
+            this.logger.debug('Ignoring system message ...', message);
             return;
           }
 
           if (!message.channel.isTextBased()) {
-            this.logger.debug('Ignoring non text based messages ...', message)
+            this.logger.debug('Ignoring non text based messages ...', message);
             return;
           }
 
-          if (message.channel.type === DiscordTypes.ChannelType.GuildText
-            && !message.mentions.has(client.user)) {
-            this.logger.debug('Ignoring guild message without mention ...')
+          if (
+            message.channel.type === DiscordTypes.ChannelType.GuildText &&
+            !message.mentions.has(client.user)
+          ) {
+            this.logger.debug('Ignoring guild message without mention ...');
             return;
           }
 
@@ -169,14 +175,15 @@ export class DiscordChannelHandler extends ChannelHandler<
     if (eventType !== StdEventType.unknown) {
       this.eventEmitter.emit(`hook:chatbot:${eventType}`, event);
     } else {
-      this.logger.error('Unknown event type', e)
+      this.logger.error('Unknown event type', e);
     }
   }
 
   private async disableButtonInteractions(
     interaction: DiscordTypes.ButtonInteraction,
   ): Promise<void> {
-    const newRow = new ActionRowBuilder<DiscordTypes.MessageActionRowComponentBuilder>();
+    const newRow =
+      new ActionRowBuilder<DiscordTypes.MessageActionRowComponentBuilder>();
     const oldRow = interaction.message.components[0];
     oldRow.components.forEach((component: DiscordTypes.ButtonComponent) => {
       const isSelected = component.customId === interaction.customId;
@@ -199,7 +206,7 @@ export class DiscordChannelHandler extends ChannelHandler<
     });
   }
 
-  handle(req: Request | SocketRequest, res: Response | SocketResponse) {
+  handle(_req: Request | SocketRequest, _res: Response | SocketResponse) {
     throw new Error('Discord Channel Handler is not using Webhooks currently.');
   }
 
@@ -235,7 +242,7 @@ export class DiscordChannelHandler extends ChannelHandler<
     event: DiscordEventWrapper,
     envelope: StdOutgoingEnvelope,
     options: BlockOptions,
-    context: any,
+    _context: any,
   ): Promise<{ mid: string }> {
     try {
       this.logger.log('Discord Channel Handler: Sending message ...');
@@ -252,7 +259,11 @@ export class DiscordChannelHandler extends ChannelHandler<
         await discordChannel.sendTyping();
       }
 
-      if ((envelope.format === OutgoingMessageFormat.list || envelope.format === OutgoingMessageFormat.carousel) && 'embeds' in payload) {
+      if (
+        (envelope.format === OutgoingMessageFormat.list ||
+          envelope.format === OutgoingMessageFormat.carousel) &&
+        'embeds' in payload
+      ) {
         let lastResId: string;
         for (const [embed, component, file] of payload.embeds.map(
           (embed: DiscordTypes.EmbedBuilder, i: number) => [
@@ -275,12 +286,10 @@ export class DiscordChannelHandler extends ChannelHandler<
       }
 
       if (discordChannel?.isTextBased()) {
-        const res = await discordChannel.send(
-          payload,
-        );
+        const res = await discordChannel.send(payload);
         return { mid: res.id };
       } else {
-        throw new Error('Only text-based channels are supported (For now ...)')
+        throw new Error('Only text-based channels are supported (For now ...)');
       }
     } catch (error) {
       this.logger.error('Failed to send message:', error);
@@ -335,7 +344,7 @@ export class DiscordChannelHandler extends ChannelHandler<
 
   _textFormat(
     message: StdOutgoingTextMessage,
-    options?: BlockOptions,
+    _options?: BlockOptions,
   ): Discord.OutgoingMessage {
     return {
       content: message.text,
@@ -370,17 +379,16 @@ export class DiscordChannelHandler extends ChannelHandler<
     const row = new ActionRowBuilder<ButtonBuilder>();
 
     message.buttons.forEach((button) => {
-      const discordButton = new ButtonBuilder()
-        .setLabel(button.title);
+      const discordButton = new ButtonBuilder().setLabel(button.title);
 
       if (button.type === ButtonType.postback) {
         discordButton
           .setCustomId(button.payload)
-          .setStyle(DiscordTypes.ButtonStyle.Secondary)
+          .setStyle(DiscordTypes.ButtonStyle.Secondary);
       } else {
         discordButton
           .setURL(button.url)
-          .setStyle(DiscordTypes.ButtonStyle.Link)
+          .setStyle(DiscordTypes.ButtonStyle.Link);
       }
 
       row.addComponents(discordButton);
@@ -394,10 +402,12 @@ export class DiscordChannelHandler extends ChannelHandler<
 
   async _attachmentFormat(
     message: StdOutgoingAttachmentMessage<WithUrl<Attachment>>,
-    options?: BlockOptions,
+    _options?: BlockOptions,
   ): Promise<Discord.OutgoingMessage> {
     const attachment = message.attachment.payload;
-    const file = new AttachmentBuilder(Attachment.getAttachmentUrl(attachment.id, attachment.name));
+    const file = new AttachmentBuilder(
+      Attachment.getAttachmentUrl(attachment.id, attachment.name),
+    );
 
     if (message.quickReplies && message.quickReplies.length > 0) {
       const row = new ActionRowBuilder<ButtonBuilder>();
@@ -414,7 +424,7 @@ export class DiscordChannelHandler extends ChannelHandler<
       return {
         files: [file],
         components: [row],
-      }
+      };
     }
 
     return {
@@ -439,7 +449,7 @@ export class DiscordChannelHandler extends ChannelHandler<
 
   _carouselFormat(
     message: StdOutgoingListMessage,
-    options: BlockOptions,
+    _options: BlockOptions,
   ): Discord.OutgoingMessage {
     const embeds = [];
     const rows = [];

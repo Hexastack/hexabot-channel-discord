@@ -6,7 +6,6 @@
  * 2. All derivative works must include clear attribution to the original creator and software, Hexastack and Hexabot, in a prominent location (e.g., in the software's "About" section, documentation, and README file).
  */
 
-
 import * as DiscordTypes from 'discord.js/typings';
 
 export namespace Discord {
@@ -15,8 +14,11 @@ export namespace Discord {
     app_id = 'app_id',
   }
 
-  export type IncomingEvent = DiscordTypes.ButtonInteraction<DiscordTypes.CacheType> | DiscordTypes.OmitPartialGroupDMChannel<DiscordTypes.Message<boolean>> 
+  export type IncomingEvent =
+    | DiscordTypes.ButtonInteraction<DiscordTypes.CacheType>
+    | DiscordTypes.OmitPartialGroupDMChannel<DiscordTypes.Message<boolean>>;
 
-  export type OutgoingMessage = DiscordTypes.MessagePayload | DiscordTypes.MessageCreateOptions
-
+  export type OutgoingMessage =
+    | DiscordTypes.MessagePayload
+    | DiscordTypes.MessageCreateOptions;
 }

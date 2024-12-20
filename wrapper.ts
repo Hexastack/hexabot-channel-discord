@@ -8,6 +8,7 @@
 
 import * as DiscordTypes from 'discord.js';
 
+import { Attachment } from '@/attachment/schemas/attachment.schema';
 import EventWrapper from '@/channel/lib/EventWrapper';
 import {
   AttachmentForeignKey,
@@ -20,41 +21,45 @@ import {
   StdEventType,
   StdIncomingMessage,
 } from '@/chat/schemas/types/message';
+import { Payload } from '@/chat/schemas/types/quick-reply';
 import { LoggerService } from '@/logger/logger.service';
 
-import { Attachment } from '@/attachment/schemas/attachment.schema';
-import { Payload } from '@/chat/schemas/types/quick-reply';
 import { DiscordChannelHandler } from './index.channel';
 import { DISCORD_CHANNEL_NAME } from './settings';
 import { Discord } from './types';
 
 type DiscordEventAdapter =
   | {
-    eventType: StdEventType.unknown;
-    messageType: never;
-    raw: Discord.IncomingEvent;
-  }
+      eventType: StdEventType.unknown;
+      messageType: never;
+      raw: Discord.IncomingEvent;
+    }
   | {
-    eventType: StdEventType.echo;
-    messageType: IncomingMessageType.message;
-    raw: DiscordTypes.OmitPartialGroupDMChannel<DiscordTypes.Message<boolean>>;
-  }
+      eventType: StdEventType.echo;
+      messageType: IncomingMessageType.message;
+      raw: DiscordTypes.OmitPartialGroupDMChannel<
+        DiscordTypes.Message<boolean>
+      >;
+    }
   | {
-    eventType: StdEventType.message;
-    messageType: IncomingMessageType.message;
-    raw: DiscordTypes.OmitPartialGroupDMChannel<DiscordTypes.Message<boolean>>;
-  }
+      eventType: StdEventType.message;
+      messageType: IncomingMessageType.message;
+      raw: DiscordTypes.OmitPartialGroupDMChannel<
+        DiscordTypes.Message<boolean>
+      >;
+    }
   | {
-    eventType: StdEventType.message;
-    messageType: IncomingMessageType.postback;
-    raw: DiscordTypes.ButtonInteraction<DiscordTypes.CacheType>;
-  }
-
+      eventType: StdEventType.message;
+      messageType: IncomingMessageType.postback;
+      raw: DiscordTypes.ButtonInteraction<DiscordTypes.CacheType>;
+    }
   | {
-    eventType: StdEventType.message;
-    messageType: IncomingMessageType.attachments;
-    raw: DiscordTypes.OmitPartialGroupDMChannel<DiscordTypes.Message<boolean>>;
-  };
+      eventType: StdEventType.message;
+      messageType: IncomingMessageType.attachments;
+      raw: DiscordTypes.OmitPartialGroupDMChannel<
+        DiscordTypes.Message<boolean>
+      >;
+    };
 
 export default class DiscordEventWrapper extends EventWrapper<
   DiscordEventAdapter,
@@ -65,22 +70,27 @@ export default class DiscordEventWrapper extends EventWrapper<
 
   constructor(handler: DiscordChannelHandler, event: Discord.IncomingEvent) {
     super(handler, event, {
-      channelType: event.channel.type
+      channelType: event.channel.type,
     });
   }
 
   _init(event: Discord.IncomingEvent): void {
     if ('customId' in event) {
-      this._adapter.eventType = StdEventType.message
-      this._adapter.messageType = IncomingMessageType.postback
+      this._adapter.eventType = StdEventType.message;
+      this._adapter.messageType = IncomingMessageType.postback;
     } else if ('content' in event) {
-      this._adapter.eventType = event.author.bot ? StdEventType.echo : StdEventType.message;
-      this._adapter.messageType = event.attachments.size > 0 ? IncomingMessageType.attachments : IncomingMessageType.message
+      this._adapter.eventType = event.author.bot
+        ? StdEventType.echo
+        : StdEventType.message;
+      this._adapter.messageType =
+        event.attachments.size > 0
+          ? IncomingMessageType.attachments
+          : IncomingMessageType.message;
     } else {
       this._adapter.eventType = StdEventType.unknown;
     }
-    
-    this._adapter.raw = event
+
+    this._adapter.raw = event;
   }
 
   getId(): string {
@@ -91,8 +101,7 @@ export default class DiscordEventWrapper extends EventWrapper<
     return this._adapter.raw.id;
   }
 
-
-  getSenderInfo(): { avatarUrl: string, firstName: string, lastName: string } {
+  getSenderInfo(): { avatarUrl: string; firstName: string; lastName: string } {
     const event = this._adapter.raw;
     // Set the sender based on the event channel type
     if (event.channel.type === DiscordTypes.ChannelType.GuildText) {
@@ -116,16 +125,16 @@ export default class DiscordEventWrapper extends EventWrapper<
         };
       }
     } else {
-      throw new Error('Unable to extract event profile!')
+      throw new Error('Unable to extract event profile!');
     }
   }
 
   getSenderForeignId(): string {
-    return this._adapter.raw.channel.id
+    return this._adapter.raw.channel.id;
   }
 
   getRecipientForeignId(): string {
-    return this._adapter.raw.channel.id
+    return this._adapter.raw.channel.id;
   }
 
   getPayload(): Payload | string | undefined {
@@ -143,7 +152,7 @@ export default class DiscordEventWrapper extends EventWrapper<
         },
       };
     }
-    return undefined
+    return undefined;
   }
 
   getMessage(): StdIncomingMessage {
@@ -152,8 +161,10 @@ export default class DiscordEventWrapper extends EventWrapper<
         text: this._adapter.raw.content,
       };
     } else if (this._adapter.messageType === IncomingMessageType.postback) {
-      const postback = this._adapter.raw.customId
-      const component = this._adapter.raw.message.components[0].components.find(({ customId }) => customId === postback) as DiscordTypes.ButtonComponent
+      const postback = this._adapter.raw.customId;
+      const component = this._adapter.raw.message.components[0].components.find(
+        ({ customId }) => customId === postback,
+      ) as DiscordTypes.ButtonComponent;
       return {
         postback,
         text: component.label,
@@ -164,7 +175,10 @@ export default class DiscordEventWrapper extends EventWrapper<
   }
 
   getAttachments(): AttachmentPayload<AttachmentForeignKey>[] {
-    if (this._adapter.messageType === IncomingMessageType.attachments && this._adapter.raw.attachments?.size > 0) {
+    if (
+      this._adapter.messageType === IncomingMessageType.attachments &&
+      this._adapter.raw.attachments?.size > 0
+    ) {
       return Array.from(this._adapter.raw.attachments.values()).map(
         (attachment) => ({
           type: attachment.contentType.split('/')[0] as FileType,
