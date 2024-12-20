@@ -94,6 +94,14 @@ export class DiscordChannelHandler extends ChannelHandler<
     return __dirname;
   }
 
+  /**
+   * Initializes the Discord channel handler.
+   * This method sets up the Discord bot, including login, event listeners for message handling,
+   * and interaction management (e.g., button postbacks). It is called automatically by the parent
+   * class constructor.
+   *
+   * @return A promise that resolves when the initialization process is complete.
+   */
   async init(): Promise<void> {
     try {
       this.logger.debug('Discord Channel Handler : initialization ...');
@@ -107,7 +115,7 @@ export class DiscordChannelHandler extends ChannelHandler<
       }
 
       // Register slash commands
-      await this.registerSlashCommands();
+      // await this.registerSlashCommands();
 
       // Destroy the client if it's already running
       await this.client.destroy();
@@ -176,13 +184,24 @@ export class DiscordChannelHandler extends ChannelHandler<
   }
 
   /**
-   * Updates the app id for the Discord Bot Application
+   * Re-initialize whenever the discord settings are updated
    */
   @OnEvent('hook:discord_channel:*')
   async handleSettingsUpdate() {
     this.init();
   }
 
+  /**
+   * Emits a standardized event based on the incoming Discord event.
+   * Wraps the event using `DiscordEventWrapper` and determines its type.
+   * If the event type is recognized, it emits the corresponding event; otherwise, it logs an error.
+   *
+   * @param e - The raw incoming event from Discord.
+   *   - The event is wrapped to extract its type and other relevant details.
+   *   - Supported event types are emitted using the `eventEmitter`.
+   *
+   * @return This function does not return a value.
+   */
   private emitEvent(e: Discord.IncomingEvent): void {
     const event = new DiscordEventWrapper(this, e);
     const eventType = event.getEventType();
@@ -193,6 +212,15 @@ export class DiscordChannelHandler extends ChannelHandler<
     }
   }
 
+  /**
+   * Disables button interactions in the message after a user selects an option from the quick replies.
+   * Updates the message components to disable all buttons, marking the selected button with a checkmark (✅).
+   *
+   * @param interaction - The button interaction triggered by the user's selection.
+   *   - Contains the details of the selected button and the message to update.
+   *
+   * @return A promise that resolves once the interaction has been updated.
+   */
   private async disableButtonInteractions(
     interaction: DiscordTypes.ButtonInteraction,
   ): Promise<void> {
@@ -220,6 +248,9 @@ export class DiscordChannelHandler extends ChannelHandler<
     });
   }
 
+  /**
+   * Unused method since Discord uses WS connnection rather then Webhook notifications
+   */
   handle(_req: Request | SocketRequest, _res: Response | SocketResponse) {
     throw new Error('Discord Channel Handler is not using Webhooks currently.');
   }
@@ -252,6 +283,22 @@ export class DiscordChannelHandler extends ChannelHandler<
     }
   }
 
+  /**
+   * Sends a message to the Discord channel associated with the event.
+   * Handles various message formats, including plain text, lists, carousels, and embedded messages.
+   * Supports optional typing indicators before sending the message.
+   *
+   * @param event - The `DiscordEventWrapper` instance representing the incoming event.
+   *   - Used to determine the target Discord channel.
+   * @param envelope - The `StdOutgoingEnvelope` containing the message content and metadata.
+   *   - Defines the format of the outgoing message (e.g., plain text, list, carousel).
+   * @param options - The `BlockOptions` for sending the message.
+   *   - Includes settings such as whether to show a typing indicator.
+   * @param _context - Additional context passed to the function (for future extensibility).
+   *
+   * @return A promise that resolves to an object containing:
+   * - `mid`: The message ID of the sent message.
+   */
   async sendMessage(
     event: DiscordEventWrapper,
     envelope: StdOutgoingEnvelope,
@@ -310,6 +357,15 @@ export class DiscordChannelHandler extends ChannelHandler<
     }
   }
 
+  /**
+   * Fetches user data from the event and constructs a `SubscriberCreateDto` object.
+   * This includes retrieving the user's profile picture, storing it, and setting default values for the subscriber's details.
+   *
+   * @param event - The `DiscordEventWrapper` instance representing the incoming event.
+   *   - Provides access to sender information and channel data.
+   *
+   * @return A promise that resolves to a `SubscriberCreateDto` object
+   */
   async getUserData(event: DiscordEventWrapper): Promise<SubscriberCreateDto> {
     try {
       const foreignId = event.getSenderForeignId();
@@ -355,6 +411,15 @@ export class DiscordChannelHandler extends ChannelHandler<
     }
   }
 
+  /**
+   * Formats a standard outgoing text message into a Discord-compatible message.
+   *
+   * @param message - The `StdOutgoingTextMessage` object containing the message text.
+   * @param _options - (Optional) The `BlockOptions` object for additional formatting options (not currently used).
+   *
+   * @return A `Discord.OutgoingMessage` object containing:
+   * - `content`: The text content of the message.
+   */
   _textFormat(
     message: StdOutgoingTextMessage,
     _options?: BlockOptions,
@@ -364,6 +429,15 @@ export class DiscordChannelHandler extends ChannelHandler<
     };
   }
 
+  /**
+   * Formats a standard outgoing quick replies message into a Discord-compatible message.
+   * Creates a row of buttons representing the quick reply options.
+   *
+   * @param message - The `StdOutgoingQuickRepliesMessage` object containing the message text and quick reply options.
+   * @param _options - (Optional) The `BlockOptions` object for additional formatting options (not currently used).
+   *
+   * @return A `Discord.OutgoingMessage`
+   */
   _quickRepliesFormat(
     message: StdOutgoingQuickRepliesMessage,
     _options?: BlockOptions,
@@ -385,6 +459,15 @@ export class DiscordChannelHandler extends ChannelHandler<
     };
   }
 
+  /**
+   * Formats a standard outgoing buttons message into a Discord-compatible message.
+   * Creates a row of buttons based on the provided message buttons.
+   *
+   * @param message - The `StdOutgoingButtonsMessage` object containing the message text and buttons.
+   * @param _options - The `BlockOptions` object for additional formatting options (not currently used).
+   *
+   * @return A `Discord.OutgoingMessage` object
+   */
   _buttonsFormat(
     message: StdOutgoingButtonsMessage,
     _options: BlockOptions,
@@ -413,6 +496,15 @@ export class DiscordChannelHandler extends ChannelHandler<
     };
   }
 
+  /**
+   * Formats a standard outgoing attachment message into a Discord-compatible message.
+   * Supports optional quick replies that are displayed as buttons along with the attachment.
+   *
+   * @param message - The `StdOutgoingAttachmentMessage` containing the attachment details and optional quick replies.
+   * @param _options - (Optional) The `BlockOptions` object for additional formatting options (not currently used).
+   *
+   * @return A `Discord.OutgoingMessage` object
+   */
   _attachmentFormat(
     message: StdOutgoingAttachmentMessage<WithUrl<Attachment>>,
     _options?: BlockOptions,
@@ -445,22 +537,15 @@ export class DiscordChannelHandler extends ChannelHandler<
     };
   }
 
+  /**
+   * Formats a standard outgoing list message into a Discord-compatible message.
+   *
+   * @param message - The `StdOutgoingListMessage` object containing the list of items to format.
+   * @param options - The `BlockOptions` object for additional formatting options.
+   *
+   * @return A `Discord.OutgoingMessage` object formatted as a carousel.
+   */
   _listFormat(
-    message: StdOutgoingListMessage,
-    options: BlockOptions,
-  ): Discord.OutgoingMessage {
-    const res = this._carouselFormat(message, options);
-    // res.components.push(
-    //   new ActionRowBuilder().addComponents(
-    //     new ButtonBuilder()
-    //       .setLabel('View More')
-    //       .setCustomId('View More'),
-    //   ),
-    // );
-    return res;
-  }
-
-  _carouselFormat(
     message: StdOutgoingListMessage,
     _options: BlockOptions,
   ): Discord.OutgoingMessage {
@@ -532,6 +617,22 @@ export class DiscordChannelHandler extends ChannelHandler<
     };
   }
 
+  /**
+   * Discord doesn't support a carousel alike format
+   */
+  _carouselFormat(
+    message: StdOutgoingListMessage,
+    options: BlockOptions,
+  ): Discord.OutgoingMessage {
+    return this._listFormat(message, options);
+  }
+
+  /**
+   * Registers slash commands for the Discord bot.
+   * This function sets up commands that users can invoke using the `/` prefix in Discord.
+   *
+   * @return A promise that resolves when the commands are successfully registered.
+   */
   private async registerSlashCommands(): Promise<void> {
     try {
       const settings = await this.getSettings();
