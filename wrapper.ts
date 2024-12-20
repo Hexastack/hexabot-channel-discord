@@ -8,6 +8,7 @@
 
 import * as DiscordTypes from 'discord.js';
 
+import { Attachment } from '@/attachment/schemas/attachment.schema';
 import EventWrapper from '@/channel/lib/EventWrapper';
 import {
   AttachmentForeignKey,
@@ -20,41 +21,45 @@ import {
   StdEventType,
   StdIncomingMessage,
 } from '@/chat/schemas/types/message';
+import { Payload } from '@/chat/schemas/types/quick-reply';
 import { LoggerService } from '@/logger/logger.service';
 
-import { Attachment } from '@/attachment/schemas/attachment.schema';
-import { Payload } from '@/chat/schemas/types/quick-reply';
 import { DiscordChannelHandler } from './index.channel';
 import { DISCORD_CHANNEL_NAME } from './settings';
 import { Discord } from './types';
 
 type DiscordEventAdapter =
   | {
-    eventType: StdEventType.unknown;
-    messageType: never;
-    raw: Discord.IncomingEvent;
-  }
+      eventType: StdEventType.unknown;
+      messageType: never;
+      raw: Discord.IncomingEvent;
+    }
   | {
-    eventType: StdEventType.echo;
-    messageType: IncomingMessageType.message;
-    raw: DiscordTypes.OmitPartialGroupDMChannel<DiscordTypes.Message<boolean>>;
-  }
+      eventType: StdEventType.echo;
+      messageType: IncomingMessageType.message;
+      raw: DiscordTypes.OmitPartialGroupDMChannel<
+        DiscordTypes.Message<boolean>
+      >;
+    }
   | {
-    eventType: StdEventType.message;
-    messageType: IncomingMessageType.message;
-    raw: DiscordTypes.OmitPartialGroupDMChannel<DiscordTypes.Message<boolean>>;
-  }
+      eventType: StdEventType.message;
+      messageType: IncomingMessageType.message;
+      raw: DiscordTypes.OmitPartialGroupDMChannel<
+        DiscordTypes.Message<boolean>
+      >;
+    }
   | {
-    eventType: StdEventType.message;
-    messageType: IncomingMessageType.postback;
-    raw: DiscordTypes.ButtonInteraction<DiscordTypes.CacheType>;
-  }
-
+      eventType: StdEventType.message;
+      messageType: IncomingMessageType.postback;
+      raw: DiscordTypes.ButtonInteraction<DiscordTypes.CacheType>;
+    }
   | {
-    eventType: StdEventType.message;
-    messageType: IncomingMessageType.attachments;
-    raw: DiscordTypes.OmitPartialGroupDMChannel<DiscordTypes.Message<boolean>>;
-  };
+      eventType: StdEventType.message;
+      messageType: IncomingMessageType.attachments;
+      raw: DiscordTypes.OmitPartialGroupDMChannel<
+        DiscordTypes.Message<boolean>
+      >;
+    };
 
 export default class DiscordEventWrapper extends EventWrapper<
   DiscordEventAdapter,
@@ -65,24 +70,43 @@ export default class DiscordEventWrapper extends EventWrapper<
 
   constructor(handler: DiscordChannelHandler, event: Discord.IncomingEvent) {
     super(handler, event, {
-      channelType: event.channel.type
+      channelType: event.channel.type,
     });
   }
 
+  /**
+   * Initializes the Discord event adapter with the provided incoming event.
+   * Determines the event type and message type based on the structure of the event.
+   *
+   * @param event - The incoming event from Discord.
+   * @return - Updates the adapter with the processed event details.
+   */
   _init(event: Discord.IncomingEvent): void {
     if ('customId' in event) {
-      this._adapter.eventType = StdEventType.message
-      this._adapter.messageType = IncomingMessageType.postback
+      this._adapter.eventType = StdEventType.message;
+      this._adapter.messageType = IncomingMessageType.postback;
     } else if ('content' in event) {
-      this._adapter.eventType = event.author.bot ? StdEventType.echo : StdEventType.message;
-      this._adapter.messageType = event.attachments.size > 0 ? IncomingMessageType.attachments : IncomingMessageType.message
+      this._adapter.eventType = event.author.bot
+        ? StdEventType.echo
+        : StdEventType.message;
+      this._adapter.messageType =
+        event.attachments.size > 0
+          ? IncomingMessageType.attachments
+          : IncomingMessageType.message;
     } else {
       this._adapter.eventType = StdEventType.unknown;
     }
-    
-    this._adapter.raw = event
+
+    this._adapter.raw = event;
   }
 
+  /**
+   * Retrieves the unique identifier for the current event.
+   * If the message type is `attachments`, a prefixed ID is returned to handle
+   * cases where multiple events are emitted for attachments.
+   *
+   * @return The unique identifier for the event, with a prefix if the message type is `attachments`.
+   */
   getId(): string {
     if (this.getMessageType() === IncomingMessageType.attachments) {
       // Since we emit 2 events whenever we receive attachments
@@ -91,8 +115,13 @@ export default class DiscordEventWrapper extends EventWrapper<
     return this._adapter.raw.id;
   }
 
-
-  getSenderInfo(): { avatarUrl: string, firstName: string, lastName: string } {
+  /**
+   * Retrieves sender information based on the event's channel type.
+   * The sender's information includes avatar URL, first name, and last name.
+   *
+   * @return An object containing the sender's details
+   */
+  getSenderInfo(): { avatarUrl: string; firstName: string; lastName: string } {
     const event = this._adapter.raw;
     // Set the sender based on the event channel type
     if (event.channel.type === DiscordTypes.ChannelType.GuildText) {
@@ -116,18 +145,36 @@ export default class DiscordEventWrapper extends EventWrapper<
         };
       }
     } else {
-      throw new Error('Unable to extract event profile!')
+      throw new Error('Unable to extract event profile!');
     }
   }
 
+  /**
+   * Retrieves the foreign ID of the sender.
+   * This ID corresponds to the channel ID associated with the event.
+   *
+   * @return The foreign ID of the sender.
+   */
   getSenderForeignId(): string {
-    return this._adapter.raw.channel.id
+    return this._adapter.raw.channel.id;
   }
 
+  /**
+   * Retrieves the foreign ID of the recipient.
+   * This ID corresponds to the channel ID associated with the event.
+   * Used specifically in cases of an echo event.
+   *
+   * @return The foreign ID of the recipient.
+   */
   getRecipientForeignId(): string {
-    return this._adapter.raw.channel.id
+    return this._adapter.raw.channel.id;
   }
 
+  /**
+   * Retrieves the payload associated with the current event.
+   *
+   * @return The payload of the event
+   */
   getPayload(): Payload | string | undefined {
     if (this._adapter.messageType === IncomingMessageType.postback) {
       return this._adapter.raw.customId;
@@ -143,17 +190,24 @@ export default class DiscordEventWrapper extends EventWrapper<
         },
       };
     }
-    return undefined
+    return undefined;
   }
 
+  /**
+   * Retrieves the standardized incoming message based on the event type.
+   *
+   * @return A `StdIncomingMessage` object containing the message
+   */
   getMessage(): StdIncomingMessage {
     if (this._adapter.messageType === IncomingMessageType.message) {
       return {
         text: this._adapter.raw.content,
       };
     } else if (this._adapter.messageType === IncomingMessageType.postback) {
-      const postback = this._adapter.raw.customId
-      const component = this._adapter.raw.message.components[0].components.find(({ customId }) => customId === postback) as DiscordTypes.ButtonComponent
+      const postback = this._adapter.raw.customId;
+      const component = this._adapter.raw.message.components[0].components.find(
+        ({ customId }) => customId === postback,
+      ) as DiscordTypes.ButtonComponent;
       return {
         postback,
         text: component.label,
@@ -163,8 +217,17 @@ export default class DiscordEventWrapper extends EventWrapper<
     throw new Error('Unknown incoming message type');
   }
 
+  /**
+   * Retrieves the list of attachments associated with the current event.
+   * Each attachment includes its type, URL, and a unique attachment ID.
+   *
+   * @return An array of `AttachmentPayload` objects
+   */
   getAttachments(): AttachmentPayload<AttachmentForeignKey>[] {
-    if (this._adapter.messageType === IncomingMessageType.attachments && this._adapter.raw.attachments?.size > 0) {
+    if (
+      this._adapter.messageType === IncomingMessageType.attachments &&
+      this._adapter.raw.attachments?.size > 0
+    ) {
       return Array.from(this._adapter.raw.attachments.values()).map(
         (attachment) => ({
           type: attachment.contentType.split('/')[0] as FileType,
@@ -178,10 +241,22 @@ export default class DiscordEventWrapper extends EventWrapper<
     return [];
   }
 
+  /**
+   * Retrieves the list of delivered message IDs.
+   * Since Discord does not support delivery receipts, this function always returns an empty array.
+   *
+   * @return An empty array, as Discord does not provide delivery receipt functionality.
+   */
   getDeliveredMessages(): string[] {
     return []; // Discord doesn't have delivery receipts
   }
 
+  /**
+   * Retrieves the timestamp of the event creation as the watermark.
+   * This timestamp represents the time when the event was created on Discord.
+   *
+   * @return A number representing the event's creation timestamp in milliseconds since the Unix epoch.
+   */
   getWatermark(): number {
     return this._adapter.raw.createdTimestamp;
   }
