@@ -13,7 +13,6 @@ import EventWrapper from '@/channel/lib/EventWrapper';
 import {
   AttachmentForeignKey,
   AttachmentPayload,
-  FileType,
 } from '@/chat/schemas/types/attachment';
 import {
   IncomingMessageType,
@@ -212,6 +211,19 @@ export default class DiscordEventWrapper extends EventWrapper<
         postback,
         text: component.label,
       };
+    } else if (this._adapter.messageType === IncomingMessageType.attachments) {
+      const [attachment] = Array.from(this._adapter.raw.attachments.values());
+      const serialized_text = attachment.url;
+      return {
+        type: PayloadType.attachments,
+        serialized_text,
+        attachment: {
+          type: Attachment.getTypeByMime(attachment.contentType),
+          payload: {
+            url: attachment.url,
+          },
+        },
+      };
     }
 
     throw new Error('Unknown incoming message type');
@@ -224,19 +236,17 @@ export default class DiscordEventWrapper extends EventWrapper<
    * @return An array of `AttachmentPayload` objects
    */
   getAttachments(): AttachmentPayload<AttachmentForeignKey>[] {
-    if (
-      this._adapter.messageType === IncomingMessageType.attachments &&
-      this._adapter.raw.attachments?.size > 0
-    ) {
-      return Array.from(this._adapter.raw.attachments.values()).map(
-        (attachment) => ({
-          type: attachment.contentType.split('/')[0] as FileType,
+    if (this._adapter.messageType == IncomingMessageType.attachments) {
+      const [attachment] = Array.from(this._adapter.raw.attachments.values());
+      return [
+        {
+          type: Attachment.getTypeByMime(attachment.contentType),
           payload: {
-            url: attachment.url,
             attachment_id: attachment.id,
+            url: attachment.url,
           },
-        }),
-      );
+        },
+      ];
     }
     return [];
   }
@@ -259,5 +269,14 @@ export default class DiscordEventWrapper extends EventWrapper<
    */
   getWatermark(): number {
     return this._adapter.raw.createdTimestamp;
+  }
+
+  setMessageType(
+    messageType:
+      | IncomingMessageType.message
+      | IncomingMessageType.postback
+      | IncomingMessageType.attachments,
+  ): void {
+    this._adapter.messageType = messageType;
   }
 }

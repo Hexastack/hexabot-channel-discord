@@ -18,14 +18,14 @@ export const DISCORD_GROUP_NAME = 'discord_channel';
 export default [
   {
     group: DISCORD_GROUP_NAME,
-    label: Discord.SettingLabel.bot_token,
-    type: SettingType.secret,
+    label: Discord.SettingLabel.app_id,
+    type: SettingType.text,
     value: '',
   },
   {
     group: DISCORD_GROUP_NAME,
-    label: Discord.SettingLabel.app_id,
-    type: SettingType.text,
+    label: Discord.SettingLabel.bot_token,
+    type: SettingType.secret,
     value: '',
   },
 ] as const satisfies ChannelSetting<typeof DISCORD_CHANNEL_NAME>[];

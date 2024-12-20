@@ -31,6 +31,7 @@ import { SubscriberCreateDto } from '@/chat/dto/subscriber.dto';
 import { WithUrl } from '@/chat/schemas/types/attachment';
 import { ButtonType } from '@/chat/schemas/types/button';
 import {
+  IncomingMessageType,
   OutgoingMessageFormat,
   StdEventType,
   StdOutgoingAttachmentMessage,
@@ -171,6 +172,13 @@ export class DiscordChannelHandler extends ChannelHandler<
           if (message.channel.type === DiscordTypes.ChannelType.GuildText) {
             const botMention = `<@${this.client.user?.id}>`; // Format for the bot mention
             message.content = message.content.replaceAll(botMention, '').trim();
+          }
+
+          if (message.attachments.size > 0 && message.content !== '') {
+            // Handle messages with text and attachments, send only the text
+            const event = new DiscordEventWrapper(this, message);
+            event.setMessageType(IncomingMessageType.message);
+            this.eventEmitter.emit('hook:chatbot:message', event);
           }
 
           this.emitEvent(message);
@@ -653,6 +661,8 @@ export class DiscordChannelHandler extends ChannelHandler<
                 ? DiscordTypes.ButtonStyle.Link
                 : DiscordTypes.ButtonStyle.Secondary,
             );
+          button.type === ButtonType.web_url &&
+            discordButton.setURL(element[message.options.fields.url]);
 
           if (
             button.type === ButtonType.web_url &&
