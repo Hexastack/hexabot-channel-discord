@@ -8,16 +8,17 @@ Not yet familiar with [Hexabot](https://hexabot.ai/)? It's an open-source chatbo
 
 - **Dual Interaction Channels**:
   - **Direct Messages**: Personal 1-on-1 bot conversations
-  - **Server Interactions**: Context-aware `/chat` slash command responses
+  - **Server Interactions**: Interactions begin with a mention to the bot, ensuring context-aware communication.
 - **User Data Retrieval**: Fetch essential user information such as username, avatar, roles, and server-specific details.
 - **Flexible Communication**:
   - **Private Conversations**: Seamless direct messaging
-  - **Server Chat**: Slash command-driven interactions
+  - **Server Chat**: Mention-based interactions
 - **Rich Messaging Features**:
-  - **Slash Commands**: Interactive `/chat` command for server environments
   - **Buttons**: Add interactive elements to guide user actions
   - **Embeds**: Create visually appealing message presentations
   - **Context Management**: Intelligent response handling in different communication contexts
+
+💡 **Note**: Before users can interact with the bot via direct messages, it must be added to a server. Direct messaging is only possible after the bot is part of at least one Discord server.
 
 ## Prerequisites
 
@@ -27,7 +28,7 @@ Before you begin, ensure you have:
 - Basic knowledge of **APIs** and **web development** (optional but recommended)
 - A **server** to host your chatbot
 - **HTTPS** enabled on your server
-- Cloned Hexabot locally (refer to https://github.com/hexastack/hexabot)
+- Cloned Hexabot locally (refer to [https://github.com/hexastack/hexabot](https://github.com/hexastack/hexabot))
 
 ## Installation
 
@@ -54,9 +55,10 @@ hexabot dev
    - Accept Developer Terms of Service
 
 3. **Create Bot**:
+
    - Go to **"Bot"** section
    - Click **"Add Bot"**
-   - Customize bot settings and permissions
+   - Customize bot settings within **General Information**
 
 ## Step 2: Generate Bot Token
 
@@ -64,7 +66,20 @@ hexabot dev
 2. Click **"Copy"** to retrieve your bot token
 3. **IMPORTANT**: Keep this token secret
 
-## Step 3: Configure OAuth2 for Server Invitation
+## Step 3: Intents Configuration
+
+- **Description**: Configure which Discord events your bot can access
+- **Recommended Intents**:
+  - Server Members
+  - Message Content
+  - Guild Messages
+
+1. **Access Bot Section**
+   - In Discord Developer Portal, navigate to **"Bot"**
+2. **Select the bot Intents**
+   - Under **Privileged Gateway Intents**, select the desired intents
+
+## Step 4: Configure OAuth2 for Server Invitation
 
 1. **Access OAuth2 Section**:
 
@@ -74,13 +89,12 @@ hexabot dev
 2. **Select Scopes**:
 
    - Check **"bot"**
-   - Check **"applications.commands"** for slash command support
 
 3. **Select Bot Permissions**:
 
    - Choose appropriate permissions based on bot functionality:
-     - Read Messages/View Channels
      - Send Messages
+     - Manage Messages
      - Embed Links
      - Attach Files
      - Read Message History
@@ -92,6 +106,7 @@ hexabot dev
    - Copy this URL
 
 5. **Add Bot to Server**:
+
    - Open the generated URL in a web browser
    - Select the target server
    - Confirm permissions
@@ -109,30 +124,23 @@ hexabot dev
    - **Mandatory**: Yes
    - **How to Obtain**: Discord Developer Portal > Bot section
 
-2. **Client ID**
+2. **Application ID**
 
    - **Description**: Your application's unique identifier
    - **How to Obtain**: Discord Developer Portal > General Information
-
-3. **Intents Configuration**
-   - **Description**: Configure which Discord events your bot can access
-   - **Recommended Intents**:
-     - Server Members
-     - Message Content
-     - Guild Messages
 
 ## Usage
 
 Once configured, your Hexabot will be available on Discord with:
 
-- Slash command interactions
+- Mention-based interactions for server environments
 - Automated responses
 - User data retrieval
 
 ### Testing Integration
 
 1. Invite bot to server
-2. Verify slash commands work only in servers
+2. Verify mention-based interactions work only in servers
 3. Verify direct messages work only in private discussions
 4. Check user data retrieval
 
@@ -145,8 +153,6 @@ We welcome community contributions!
 - Submit pull requests
 
 Please review [Contribution Guidelines](./CONTRIBUTING.md)
-
-[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](./CODE_OF_CONDUCT.md)
 
 Join our [Discord](https://discord.gg/rNb9t2MFkG)
 
