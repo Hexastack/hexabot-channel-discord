@@ -18,7 +18,5 @@ export namespace Discord {
     | DiscordTypes.ButtonInteraction<DiscordTypes.CacheType>
     | DiscordTypes.OmitPartialGroupDMChannel<DiscordTypes.Message<boolean>>;
 
-  export type OutgoingMessage =
-    | DiscordTypes.MessagePayload
-    | DiscordTypes.MessageCreateOptions;
+  export type OutgoingMessage = DiscordTypes.MessageCreateOptions;
 }
