@@ -312,42 +312,29 @@ export class DiscordChannelHandler extends ChannelHandler<
 
       const discordChannel = (await this.client.channels.fetch(
         event.getSenderForeignId(),
-      )) as unknown as DiscordTypes.TextChannel;
-
-      // Send typing indicator
-      if (options.typing) {
-        await discordChannel.sendTyping();
-      }
-
-      if (
-        (envelope.format === OutgoingMessageFormat.list ||
-          envelope.format === OutgoingMessageFormat.carousel) &&
-        'embeds' in payload
-      ) {
-        let lastResId: string;
-        for (const [embed, component, file] of payload.embeds.map(
-          (embed: DiscordTypes.EmbedBuilder, i: number) => [
-            embed,
-            payload.components[i],
-            payload.files[i],
-          ],
-        )) {
-          const resBody = {
-            content: '\u200B',
-            embeds: [embed],
-          };
-          component && (resBody['components'] = [component]);
-          file && (resBody['files'] = [file]);
-          const res = await discordChannel.send(resBody as any);
-          lastResId = res.id;
-        }
-
-        return { mid: lastResId };
-      }
+      )) as DiscordTypes.TextChannel;
 
       if (discordChannel?.isTextBased()) {
-        const res = await discordChannel.send(payload);
-        return { mid: res.id };
+        // Send typing indicator
+        if (options.typing) {
+          await discordChannel.sendTyping();
+        }
+        // Send the message
+        if (
+          (envelope.format === OutgoingMessageFormat.list ||
+            envelope.format === OutgoingMessageFormat.carousel) &&
+          'embeds' in payload
+        ) {
+          const res = await this.sendListCarouselMessage(
+            payload,
+            envelope,
+            discordChannel,
+          );
+          return { mid: res };
+        } else {
+          const res = await discordChannel.send(payload);
+          return { mid: res.id };
+        }
       } else {
         throw new Error('Only text-based channels are supported (For now ...)');
       }
@@ -366,6 +353,45 @@ export class DiscordChannelHandler extends ChannelHandler<
    *
    * @return A promise that resolves to a `SubscriberCreateDto` object
    */
+  async sendListCarouselMessage(
+    payload: Discord.OutgoingMessage,
+    envelope: StdOutgoingEnvelope,
+    discordChannel: DiscordTypes.TextChannel,
+  ): Promise<string> {
+    let lastResId: string;
+    for (const [embed, component, file] of payload.embeds.map(
+      (
+        embed: DiscordTypes.EmbedBuilder,
+        i: number,
+      ): [
+        EmbedBuilder,
+        ActionRowBuilder<DiscordTypes.ButtonBuilder>,
+        AttachmentBuilder,
+      ] => [
+        embed,
+        payload.components[i] as ActionRowBuilder<ButtonBuilder>,
+        payload.files[i] as AttachmentBuilder,
+      ],
+    )) {
+      const resBody: Discord.OutgoingMessage = {
+        content: '\u200B',
+        embeds: [embed],
+      };
+      component && (resBody['components'] = [component]);
+      file && (resBody['files'] = [file]);
+      const res = await discordChannel.send(resBody);
+      lastResId = res.id;
+    }
+
+    if (envelope.format === OutgoingMessageFormat.list) {
+      await discordChannel.send({
+        components: [payload.components[payload.embeds.length]],
+      });
+    }
+
+    return lastResId;
+  }
+
   async getUserData(event: DiscordEventWrapper): Promise<SubscriberCreateDto> {
     try {
       const foreignId = event.getSenderForeignId();
@@ -547,15 +573,51 @@ export class DiscordChannelHandler extends ChannelHandler<
    */
   _listFormat(
     message: StdOutgoingListMessage,
+    options: BlockOptions,
+  ): Discord.OutgoingMessage {
+    const pagination = message.pagination;
+
+    // Generate embeds and components using _carouselFormat
+    const res = this._carouselFormat(message, options);
+
+    // Add "View More" button if there are additional pages
+    if (
+      pagination &&
+      pagination.total - pagination.skip - pagination.limit > 0
+    ) {
+      const viewMoreButton = new ButtonBuilder()
+        .setLabel('View More')
+        .setStyle(DiscordTypes.ButtonStyle.Primary)
+        .setCustomId('VIEW_MORE');
+
+      const actionRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+        viewMoreButton,
+      );
+      // Add the view more button row to existing components
+      if (!res.components) {
+        res.components = [actionRow];
+      } else {
+        res.components = [...res.components, actionRow];
+      }
+    }
+
+    return res;
+  }
+
+  /**
+   * Discord doesn't support a carousel alike format
+   */
+  _carouselFormat(
+    message: StdOutgoingListMessage,
     _options: BlockOptions,
   ): Discord.OutgoingMessage {
-    const embeds = [];
-    const rows = [];
+    const embeds: EmbedBuilder[] = [];
+    const rows: ActionRowBuilder<ButtonBuilder>[] = [];
     const attachments: AttachmentBuilder[] = [];
 
     message.elements.forEach((element) => {
       const embed = new EmbedBuilder().setTitle(element.title);
-      const row = new ActionRowBuilder();
+      const row = new ActionRowBuilder<ButtonBuilder>();
 
       if (
         message.options.fields.subtitle &&
@@ -611,20 +673,10 @@ export class DiscordChannelHandler extends ChannelHandler<
     });
 
     return {
-      embeds: [...embeds],
-      components: [...rows],
+      embeds,
+      components: rows,
       files: attachments,
     };
-  }
-
-  /**
-   * Discord doesn't support a carousel alike format
-   */
-  _carouselFormat(
-    message: StdOutgoingListMessage,
-    options: BlockOptions,
-  ): Discord.OutgoingMessage {
-    return this._listFormat(message, options);
   }
 
   /**
