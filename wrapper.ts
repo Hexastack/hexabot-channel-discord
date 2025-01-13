@@ -10,10 +10,7 @@ import * as DiscordTypes from 'discord.js';
 
 import { Attachment } from '@/attachment/schemas/attachment.schema';
 import EventWrapper from '@/channel/lib/EventWrapper';
-import {
-  AttachmentForeignKey,
-  AttachmentPayload,
-} from '@/chat/schemas/types/attachment';
+import { AttachmentPayload, FileType } from '@/chat/schemas/types/attachment';
 import {
   IncomingMessageType,
   PayloadType,
@@ -32,6 +29,7 @@ type DiscordEventAdapter =
       eventType: StdEventType.unknown;
       messageType: never;
       raw: Discord.IncomingEvent;
+      attachments: never;
     }
   | {
       eventType: StdEventType.echo;
@@ -39,6 +37,7 @@ type DiscordEventAdapter =
       raw: DiscordTypes.OmitPartialGroupDMChannel<
         DiscordTypes.Message<boolean>
       >;
+      attachments: never;
     }
   | {
       eventType: StdEventType.message;
@@ -46,11 +45,13 @@ type DiscordEventAdapter =
       raw: DiscordTypes.OmitPartialGroupDMChannel<
         DiscordTypes.Message<boolean>
       >;
+      attachments: never;
     }
   | {
       eventType: StdEventType.message;
       messageType: IncomingMessageType.postback;
       raw: DiscordTypes.ButtonInteraction<DiscordTypes.CacheType>;
+      attachments: never;
     }
   | {
       eventType: StdEventType.message;
@@ -58,12 +59,14 @@ type DiscordEventAdapter =
       raw: DiscordTypes.OmitPartialGroupDMChannel<
         DiscordTypes.Message<boolean>
       >;
+      attachments: Attachment[];
     };
 
 export default class DiscordEventWrapper extends EventWrapper<
   DiscordEventAdapter,
   Discord.IncomingEvent,
-  typeof DISCORD_CHANNEL_NAME
+  typeof DISCORD_CHANNEL_NAME,
+  DiscordChannelHandler
 > {
   protected readonly logger: LoggerService;
 
@@ -97,6 +100,23 @@ export default class DiscordEventWrapper extends EventWrapper<
     }
 
     this._adapter.raw = event;
+  }
+
+  /**
+   * Fetch and store Discord attachments
+   */
+  async preprocess() {
+    if (
+      this._adapter.eventType === StdEventType.message &&
+      this._adapter.messageType === IncomingMessageType.attachments
+    ) {
+      const discordAttachments = Array.from(
+        this._adapter.raw.attachments.values(),
+      ).map((attachment) => {
+        return this.getHandler().fetchAndStoreAttachment(attachment);
+      });
+      this._adapter.attachments = await Promise.all(discordAttachments);
+    }
   }
 
   /**
@@ -178,15 +198,28 @@ export default class DiscordEventWrapper extends EventWrapper<
     if (this._adapter.messageType === IncomingMessageType.postback) {
       return this._adapter.raw.customId;
     } else if (this._adapter.messageType === IncomingMessageType.attachments) {
-      const [attachment] = Array.from(this._adapter.raw.attachments.values());
+      if (this._adapter.attachments.length === 0) {
+        return {
+          type: PayloadType.attachments,
+          attachments: {
+            type: FileType.unknown,
+            payload: { id: null },
+          },
+        };
+      }
+
+      const attachmentPayloads = this._adapter.attachments.map(
+        (attachment) => ({
+          type: Attachment.getTypeByMime(attachment.type),
+          payload: {
+            id: attachment.id,
+          },
+        }),
+      );
+
       return {
         type: PayloadType.attachments,
-        attachments: {
-          type: Attachment.getTypeByMime(attachment.contentType),
-          payload: {
-            url: attachment?.url || '',
-          },
-        },
+        attachments: attachmentPayloads[0],
       };
     }
     return undefined;
@@ -212,17 +245,28 @@ export default class DiscordEventWrapper extends EventWrapper<
         text: component.label,
       };
     } else if (this._adapter.messageType === IncomingMessageType.attachments) {
-      const [attachment] = Array.from(this._adapter.raw.attachments.values());
-      const serialized_text = attachment.url;
+      if (this._adapter.attachments.length === 0) {
+        return {
+          type: PayloadType.attachments,
+          serialized_text: `attachment:${FileType.unknown}`,
+          attachment: [],
+        };
+      }
+      const attachmentPayloads = this._adapter.attachments.map(
+        (attachment) => ({
+          type: Attachment.getTypeByMime(attachment.type),
+          payload: {
+            id: attachment.id,
+          },
+        }),
+      );
       return {
         type: PayloadType.attachments,
-        serialized_text,
-        attachment: {
-          type: Attachment.getTypeByMime(attachment.contentType),
-          payload: {
-            url: attachment.url,
-          },
-        },
+        serialized_text: `attachment:${attachmentPayloads[0].type}:${this._adapter.attachments[0].name}`,
+        attachment:
+          attachmentPayloads.length === 1
+            ? attachmentPayloads[0]
+            : attachmentPayloads,
       };
     }
 
@@ -235,18 +279,14 @@ export default class DiscordEventWrapper extends EventWrapper<
    *
    * @return An array of `AttachmentPayload` objects
    */
-  getAttachments(): AttachmentPayload<AttachmentForeignKey>[] {
+  getAttachments(): AttachmentPayload[] {
     if (this._adapter.messageType == IncomingMessageType.attachments) {
-      const [attachment] = Array.from(this._adapter.raw.attachments.values());
-      return [
-        {
-          type: Attachment.getTypeByMime(attachment.contentType),
-          payload: {
-            attachment_id: attachment.id,
-            url: attachment.url,
-          },
+      return this._adapter.attachments.map((attachment) => ({
+        type: Attachment.getTypeByMime(attachment.type),
+        payload: {
+          id: attachment.id,
         },
-      ];
+      }));
     }
     return [];
   }
