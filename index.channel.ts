@@ -48,6 +48,7 @@ import { LabelService } from '@/chat/services/label.service';
 import { MessageService } from '@/chat/services/message.service';
 import { SubscriberService } from '@/chat/services/subscriber.service';
 import { MenuService } from '@/cms/services/menu.service';
+import { config } from '@/config';
 import { LanguageService } from '@/i18n/services/language.service';
 import { LoggerService } from '@/logger/logger.service';
 import { SettingService } from '@/setting/services/setting.service';
@@ -425,6 +426,7 @@ export class DiscordChannelHandler extends ChannelHandler<
       const info = event.getSenderInfo();
 
       // Store subscriber/channel avatar
+      let avatarId = null;
       if (info.avatarUrl) {
         const response = await this.httpService.axiosRef.get<Stream>(
           info.avatarUrl,
@@ -433,14 +435,19 @@ export class DiscordChannelHandler extends ChannelHandler<
           },
         );
 
-        await this.attachmentService.store(response.data, {
-          name: uuidv4(),
-          size: parseInt(response.headers['content-length']),
-          type: response.headers['content-type'],
-          channel: {
-            [this.getName()]: { url: info.avatarUrl },
+        const avatar = await this.attachmentService.store(
+          response.data,
+          {
+            name: uuidv4(),
+            size: parseInt(response.headers['content-length']),
+            type: response.headers['content-type'],
+            channel: {
+              [this.getName()]: { url: info.avatarUrl },
+            },
           },
-        });
+          config.parameters.avatarDir,
+        );
+        avatarId = avatar.id;
       }
 
       const defautLanguage = await this.languageService.getDefaultLanguage();
@@ -450,6 +457,7 @@ export class DiscordChannelHandler extends ChannelHandler<
         last_name: info.lastName,
         gender: '',
         channel: event.getChannelData(),
+        avatar: avatarId,
         assignedAt: null,
         assignedTo: null,
         labels: [],
