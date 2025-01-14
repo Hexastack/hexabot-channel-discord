@@ -103,7 +103,7 @@ export default class DiscordEventWrapper extends EventWrapper<
   }
 
   /**
-   * Fetch and store Discord attachments
+   * Fetches and stores received Discord attachments
    */
   async preprocess() {
     if (
