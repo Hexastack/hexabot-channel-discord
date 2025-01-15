@@ -165,7 +165,7 @@ export class DiscordChannelHandler extends ChannelHandler<
 
           if (
             message.channel.type === DiscordTypes.ChannelType.GuildText &&
-            !message.mentions.has(this.client.user)
+            !message.mentions.has(this.client.user!)
           ) {
             this.logger.debug('Ignoring guild message without mention ...');
             return;
@@ -180,7 +180,7 @@ export class DiscordChannelHandler extends ChannelHandler<
           if (message.attachments.size > 0 && message.content !== '') {
             // Handle messages with text and attachments, send only the text
             const event = new DiscordEventWrapper(this, message);
-            event.setMessageType(IncomingMessageType.message);
+            event._adapter.messageType = IncomingMessageType.message;
             this.eventEmitter.emit('hook:chatbot:message', event);
           }
 
@@ -221,9 +221,9 @@ export class DiscordChannelHandler extends ChannelHandler<
 
         files.push({
           file: response.data,
-          name: attachment.title,
+          name: attachment.title || undefined,
           size: attachment.size || parseInt(response.headers['content-length']),
-          type: attachment.contentType,
+          type: attachment.contentType || response.headers['content-type'],
         });
       }
     }
@@ -278,7 +278,7 @@ export class DiscordChannelHandler extends ChannelHandler<
     oldRow.components.forEach((component: DiscordTypes.ButtonComponent) => {
       const isSelected = component.customId === interaction.customId;
       const discordButton = new ButtonBuilder()
-        .setLabel(component.label)
+        .setLabel(component.label || 'No Label')
         .setStyle(component.style)
         .setDisabled(true);
       isSelected && discordButton.setEmoji('✅');
@@ -378,7 +378,7 @@ export class DiscordChannelHandler extends ChannelHandler<
             envelope,
             discordChannel,
           );
-          return { mid: res };
+          return { mid: res || uuidv4() };
         } else {
           const res = await discordChannel.send(payload);
           return { mid: res.id };
@@ -396,9 +396,9 @@ export class DiscordChannelHandler extends ChannelHandler<
     payload: Discord.OutgoingMessage,
     envelope: StdOutgoingEnvelope,
     discordChannel: DiscordTypes.TextChannel,
-  ): Promise<string> {
-    let lastResId: string;
-    for (const [embed, component, file] of payload.embeds.map(
+  ): Promise<string | null> {
+    let lastResId: string | null = null;
+    const items = (payload.embeds || []).map(
       (
         embed: DiscordTypes.EmbedBuilder,
         i: number,
@@ -408,10 +408,11 @@ export class DiscordChannelHandler extends ChannelHandler<
         AttachmentBuilder,
       ] => [
         embed,
-        payload.components[i] as ActionRowBuilder<ButtonBuilder>,
-        payload.files[i] as AttachmentBuilder,
+        payload.components?.[i] as ActionRowBuilder<ButtonBuilder>,
+        payload.files?.[i] as AttachmentBuilder,
       ],
-    )) {
+    );
+    for (const [embed, component, file] of items) {
       const resBody: Discord.OutgoingMessage = {
         content: '\u200B',
         embeds: [embed],
@@ -424,7 +425,10 @@ export class DiscordChannelHandler extends ChannelHandler<
 
     if (envelope.format === OutgoingMessageFormat.list) {
       await discordChannel.send({
-        components: [payload.components[payload.embeds.length]],
+        components:
+          payload.embeds && payload.components
+            ? [payload.components[payload.embeds.length]]
+            : [],
       });
     }
 
@@ -691,7 +695,7 @@ export class DiscordChannelHandler extends ChannelHandler<
       }
 
       if (fields.url && element[fields.url]) {
-        embed.setURL(element[message.options.fields.url]);
+        embed.setURL(element[fields.url]);
       }
 
       if (fields.image_url && element[fields.image_url]) {
@@ -718,15 +722,13 @@ export class DiscordChannelHandler extends ChannelHandler<
                 ? DiscordTypes.ButtonStyle.Link
                 : DiscordTypes.ButtonStyle.Secondary,
             );
-          button.type === ButtonType.web_url &&
-            discordButton.setURL(element[message.options.fields.url]);
 
           if (
             button.type === ButtonType.web_url &&
-            message.options.fields.url &&
-            element[message.options.fields.url]
+            fields.url &&
+            element[fields.url]
           ) {
-            discordButton.setURL(element[message.options.fields.url]);
+            discordButton.setURL(element[fields.url]);
           } else if (button.type === ButtonType.postback) {
             discordButton.setCustomId(button.payload);
           }
