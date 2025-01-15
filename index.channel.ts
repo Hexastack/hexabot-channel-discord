@@ -6,6 +6,8 @@
  * 2. All derivative works must include clear attribution to the original creator and software, Hexastack and Hexabot, in a prominent location (e.g., in the software's "About" section, documentation, and README file).
  */
 
+import { Stream } from 'stream';
+
 import { HttpService } from '@nestjs/axios';
 import { Injectable } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -22,13 +24,13 @@ import {
 } from 'discord.js';
 import { Request, Response } from 'express';
 import { I18nService } from 'nestjs-i18n';
+import { v4 as uuidv4 } from 'uuid';
 
-import { Attachment } from '@/attachment/schemas/attachment.schema';
 import { AttachmentService } from '@/attachment/services/attachment.service';
 import { ChannelService } from '@/channel/channel.service';
 import ChannelHandler from '@/channel/lib/Handler';
 import { SubscriberCreateDto } from '@/chat/dto/subscriber.dto';
-import { WithUrl } from '@/chat/schemas/types/attachment';
+import { AttachmentRef } from '@/chat/schemas/types/attachment';
 import { ButtonType } from '@/chat/schemas/types/button';
 import {
   IncomingMessageType,
@@ -46,6 +48,7 @@ import { LabelService } from '@/chat/services/label.service';
 import { MessageService } from '@/chat/services/message.service';
 import { SubscriberService } from '@/chat/services/subscriber.service';
 import { MenuService } from '@/cms/services/menu.service';
+import { config } from '@/config';
 import { LanguageService } from '@/i18n/services/language.service';
 import { LoggerService } from '@/logger/logger.service';
 import { SettingService } from '@/setting/services/setting.service';
@@ -191,6 +194,23 @@ export class DiscordChannelHandler extends ChannelHandler<
     }
   }
 
+  async fetchAndStoreAttachment(attachment: DiscordTypes.Attachment) {
+    const response = await this.httpService.axiosRef.get<Stream>(
+      attachment.url,
+      {
+        responseType: 'stream',
+      },
+    );
+    return this.attachmentService.store(response.data, {
+      name: attachment.title,
+      size: attachment.size || parseInt(response.headers['content-length']),
+      type: attachment.contentType,
+      channel: {
+        [this.getName()]: attachment,
+      },
+    });
+  }
+
   /**
    * Re-initialize whenever the discord settings are updated
    */
@@ -278,9 +298,9 @@ export class DiscordChannelHandler extends ChannelHandler<
       case OutgoingMessageFormat.buttons:
         return this._buttonsFormat(envelope.message, options);
       case OutgoingMessageFormat.carousel:
-        return this._carouselFormat(envelope.message, options);
+        return await this._carouselFormat(envelope.message, options);
       case OutgoingMessageFormat.list:
-        return this._listFormat(envelope.message, options);
+        return await this._listFormat(envelope.message, options);
       case OutgoingMessageFormat.quickReplies:
         return this._quickRepliesFormat(envelope.message, options);
       case OutgoingMessageFormat.text:
@@ -406,17 +426,28 @@ export class DiscordChannelHandler extends ChannelHandler<
       const info = event.getSenderInfo();
 
       // Store subscriber/channel avatar
+      let avatarId = null;
       if (info.avatarUrl) {
-        const avatar = await this.httpService.axiosRef({
-          url: info.avatarUrl,
-          method: 'GET',
-          responseType: 'arraybuffer',
-        });
-
-        await this.attachmentService.uploadProfilePic(
-          avatar.data,
-          foreignId + '.jpeg',
+        const response = await this.httpService.axiosRef.get<Stream>(
+          info.avatarUrl,
+          {
+            responseType: 'stream',
+          },
         );
+
+        const avatar = await this.attachmentService.store(
+          response.data,
+          {
+            name: uuidv4(),
+            size: parseInt(response.headers['content-length']),
+            type: response.headers['content-type'],
+            channel: {
+              [this.getName()]: { url: info.avatarUrl },
+            },
+          },
+          config.parameters.avatarDir,
+        );
+        avatarId = avatar.id;
       }
 
       const defautLanguage = await this.languageService.getDefaultLanguage();
@@ -426,6 +457,7 @@ export class DiscordChannelHandler extends ChannelHandler<
         last_name: info.lastName,
         gender: '',
         channel: event.getChannelData(),
+        avatar: avatarId,
         assignedAt: null,
         assignedTo: null,
         labels: [],
@@ -539,14 +571,12 @@ export class DiscordChannelHandler extends ChannelHandler<
    *
    * @return A `Discord.OutgoingMessage` object
    */
-  _attachmentFormat(
-    message: StdOutgoingAttachmentMessage<WithUrl<Attachment>>,
+  async _attachmentFormat(
+    message: StdOutgoingAttachmentMessage,
     _options?: BlockOptions,
-  ): Discord.OutgoingMessage {
-    const attachment = message.attachment.payload;
-    const file = new AttachmentBuilder(
-      Attachment.getAttachmentUrl(attachment.id, attachment.name),
-    );
+  ): Promise<Discord.OutgoingMessage> {
+    const url = await this.getPublicUrl(message.attachment.payload);
+    const file = new AttachmentBuilder(url);
 
     if (message.quickReplies && message.quickReplies.length > 0) {
       const row = new ActionRowBuilder<ButtonBuilder>();
@@ -579,14 +609,14 @@ export class DiscordChannelHandler extends ChannelHandler<
    *
    * @return A `Discord.OutgoingMessage` object formatted as a carousel.
    */
-  _listFormat(
+  async _listFormat(
     message: StdOutgoingListMessage,
     options: BlockOptions,
-  ): Discord.OutgoingMessage {
+  ): Promise<Discord.OutgoingMessage> {
     const pagination = message.pagination;
 
     // Generate embeds and components using _carouselFormat
-    const res = this._carouselFormat(message, options);
+    const res = await this._carouselFormat(message, options);
 
     // Add "View More" button if there are additional pages
     if (
@@ -615,34 +645,33 @@ export class DiscordChannelHandler extends ChannelHandler<
   /**
    * Discord doesn't support a carousel alike format
    */
-  _carouselFormat(
+  async _carouselFormat(
     message: StdOutgoingListMessage,
     _options: BlockOptions,
-  ): Discord.OutgoingMessage {
+  ): Promise<Discord.OutgoingMessage> {
     const embeds: EmbedBuilder[] = [];
     const rows: ActionRowBuilder<ButtonBuilder>[] = [];
     const attachments: AttachmentBuilder[] = [];
+    const fields = message.options.fields;
 
-    message.elements.forEach((element) => {
+    for (const element of message.elements) {
       const embed = new EmbedBuilder().setTitle(element.title);
       const row = new ActionRowBuilder<ButtonBuilder>();
 
-      if (
-        message.options.fields.subtitle &&
-        element[message.options.fields.subtitle]
-      ) {
-        embed.setDescription(element[message.options.fields.subtitle]);
+      if (fields.subtitle && element[fields.subtitle]) {
+        embed.setDescription(element[fields.subtitle]);
       }
 
-      if (message.options.fields.url && element[message.options.fields.url]) {
+      if (fields.url && element[fields.url]) {
         embed.setURL(element[message.options.fields.url]);
       }
 
-      if (
-        message.options.fields.image_url &&
-        element[message.options.fields.image_url]
-      ) {
-        const url = element[message.options.fields.image_url].payload.url;
+      if (fields.image_url && element[fields.image_url]) {
+        const attachmentRef: AttachmentRef =
+          typeof element[fields.image_url] === 'string'
+            ? { url: element[fields.image_url] }
+            : element[fields.image_url].payload;
+        const url = await this.getPublicUrl(attachmentRef);
         const attachmentName = `image-${Date.now()}.png`;
         const attachment = new AttachmentBuilder(url, {
           name: attachmentName,
@@ -680,7 +709,7 @@ export class DiscordChannelHandler extends ChannelHandler<
       }
 
       embeds.push(embed);
-    });
+    }
 
     return {
       embeds,
