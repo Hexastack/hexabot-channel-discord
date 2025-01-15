@@ -27,6 +27,7 @@ import { I18nService } from 'nestjs-i18n';
 import { v4 as uuidv4 } from 'uuid';
 
 import { AttachmentService } from '@/attachment/services/attachment.service';
+import { AttachmentFile } from '@/attachment/types';
 import { ChannelService } from '@/channel/channel.service';
 import ChannelHandler from '@/channel/lib/Handler';
 import { SubscriberCreateDto } from '@/chat/dto/subscriber.dto';
@@ -48,7 +49,6 @@ import { LabelService } from '@/chat/services/label.service';
 import { MessageService } from '@/chat/services/message.service';
 import { SubscriberService } from '@/chat/services/subscriber.service';
 import { MenuService } from '@/cms/services/menu.service';
-import { config } from '@/config';
 import { LanguageService } from '@/i18n/services/language.service';
 import { LoggerService } from '@/logger/logger.service';
 import { SettingService } from '@/setting/services/setting.service';
@@ -74,7 +74,7 @@ export class DiscordChannelHandler extends ChannelHandler<
     protected readonly i18n: I18nService,
     protected readonly languageService: LanguageService,
     protected readonly subscriberService: SubscriberService,
-    protected readonly attachmentService: AttachmentService,
+    public readonly attachmentService: AttachmentService,
     protected readonly messageService: MessageService,
     protected readonly menuService: MenuService,
     protected readonly labelService: LabelService,
@@ -194,21 +194,41 @@ export class DiscordChannelHandler extends ChannelHandler<
     }
   }
 
-  async fetchAndStoreAttachment(attachment: DiscordTypes.Attachment) {
-    const response = await this.httpService.axiosRef.get<Stream>(
-      attachment.url,
-      {
-        responseType: 'stream',
-      },
-    );
-    return this.attachmentService.store(response.data, {
-      name: attachment.title,
-      size: attachment.size || parseInt(response.headers['content-length']),
-      type: attachment.contentType,
-      channel: {
-        [this.getName()]: attachment,
-      },
-    });
+  /**
+   * Fetches attachments from Discord for a given message
+   *
+   * @param event The received message event
+   * @returns An array of files
+   */
+  async getMessageAttachments(
+    event: DiscordEventWrapper,
+  ): Promise<AttachmentFile[]> {
+    const files: AttachmentFile[] = [];
+    if (
+      event._adapter.eventType === StdEventType.message &&
+      event._adapter.messageType === IncomingMessageType.attachments &&
+      event._adapter.raw.attachments.size > 0
+    ) {
+      for (const attachment of Array.from(
+        event._adapter.raw.attachments.values(),
+      )) {
+        const response = await this.httpService.axiosRef.get<Stream>(
+          attachment.url,
+          {
+            responseType: 'stream',
+          },
+        );
+
+        files.push({
+          file: response.data,
+          name: attachment.title,
+          size: attachment.size || parseInt(response.headers['content-length']),
+          type: attachment.contentType,
+        });
+      }
+    }
+
+    return await Promise.all(files);
   }
 
   /**
@@ -412,6 +432,37 @@ export class DiscordChannelHandler extends ChannelHandler<
   }
 
   /**
+   * Fetches the subscriber avatar from Discord
+   *
+   * @param event The message event
+   * @returns The avatar file
+   */
+  async getSubscriberAvatar(
+    event: DiscordEventWrapper,
+  ): Promise<AttachmentFile | undefined> {
+    const info = event.getSenderInfo();
+
+    // Store subscriber/channel avatar
+    if (info.avatarUrl) {
+      const response = await this.httpService.axiosRef.get<Stream>(
+        info.avatarUrl,
+        {
+          responseType: 'stream',
+        },
+      );
+
+      return {
+        file: response.data,
+        name: uuidv4(),
+        size: parseInt(response.headers['content-length']),
+        type: response.headers['content-type'],
+      };
+    }
+
+    return undefined;
+  }
+
+  /**
    * Fetches user data from the event and constructs a `SubscriberCreateDto` object.
    * This includes retrieving the user's profile picture, storing it, and setting default values for the subscriber's details.
    *
@@ -420,35 +471,12 @@ export class DiscordChannelHandler extends ChannelHandler<
    *
    * @return A promise that resolves to a `SubscriberCreateDto` object
    */
-  async getUserData(event: DiscordEventWrapper): Promise<SubscriberCreateDto> {
+  async getSubscriberData(
+    event: DiscordEventWrapper,
+  ): Promise<SubscriberCreateDto> {
     try {
       const foreignId = event.getSenderForeignId();
       const info = event.getSenderInfo();
-
-      // Store subscriber/channel avatar
-      let avatarId = null;
-      if (info.avatarUrl) {
-        const response = await this.httpService.axiosRef.get<Stream>(
-          info.avatarUrl,
-          {
-            responseType: 'stream',
-          },
-        );
-
-        const avatar = await this.attachmentService.store(
-          response.data,
-          {
-            name: uuidv4(),
-            size: parseInt(response.headers['content-length']),
-            type: response.headers['content-type'],
-            channel: {
-              [this.getName()]: { url: info.avatarUrl },
-            },
-          },
-          config.parameters.avatarDir,
-        );
-        avatarId = avatar.id;
-      }
 
       const defautLanguage = await this.languageService.getDefaultLanguage();
       return {
@@ -457,7 +485,7 @@ export class DiscordChannelHandler extends ChannelHandler<
         last_name: info.lastName,
         gender: '',
         channel: event.getChannelData(),
-        avatar: avatarId,
+        avatar: null,
         assignedAt: null,
         assignedTo: null,
         labels: [],

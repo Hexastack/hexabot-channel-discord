@@ -103,23 +103,6 @@ export default class DiscordEventWrapper extends EventWrapper<
   }
 
   /**
-   * Fetches and stores received Discord attachments
-   */
-  async preprocess() {
-    if (
-      this._adapter.eventType === StdEventType.message &&
-      this._adapter.messageType === IncomingMessageType.attachments
-    ) {
-      const discordAttachments = Array.from(
-        this._adapter.raw.attachments.values(),
-      ).map((attachment) => {
-        return this.getHandler().fetchAndStoreAttachment(attachment);
-      });
-      this._adapter.attachments = await Promise.all(discordAttachments);
-    }
-  }
-
-  /**
    * Retrieves the unique identifier for the current event.
    * If the message type is `attachments`, a prefixed ID is returned to handle
    * cases where multiple events are emitted for attachments.
