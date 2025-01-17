@@ -206,7 +206,7 @@ export default class DiscordEventWrapper extends EventWrapper<
       if (this._adapter.attachments.length === 0) {
         return {
           type: PayloadType.attachments,
-          attachments: {
+          attachment: {
             type: FileType.unknown,
             payload: { id: null },
           },
@@ -224,7 +224,7 @@ export default class DiscordEventWrapper extends EventWrapper<
 
       return {
         type: PayloadType.attachments,
-        attachments: attachmentPayloads[0],
+        attachment: attachmentPayloads[0],
       };
     }
     return undefined;
