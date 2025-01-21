@@ -10,7 +10,7 @@ import * as DiscordTypes from 'discord.js';
 
 import { Attachment } from '@/attachment/schemas/attachment.schema';
 import EventWrapper from '@/channel/lib/EventWrapper';
-import { AttachmentPayload, FileType } from '@/chat/schemas/types/attachment';
+import { FileType } from '@/chat/schemas/types/attachment';
 import {
   IncomingMessageType,
   PayloadType,
@@ -71,8 +71,12 @@ export default class DiscordEventWrapper extends EventWrapper<
   protected readonly logger: LoggerService;
 
   constructor(handler: DiscordChannelHandler, event: Discord.IncomingEvent) {
+    if (!event.channel?.type) {
+      throw new Error('Unable to determine the channel type');
+    }
+
     super(handler, event, {
-      channelType: event.channel.type,
+      channelType: event.channel?.type,
     });
   }
 
@@ -103,23 +107,6 @@ export default class DiscordEventWrapper extends EventWrapper<
   }
 
   /**
-   * Fetches and stores received Discord attachments
-   */
-  async preprocess() {
-    if (
-      this._adapter.eventType === StdEventType.message &&
-      this._adapter.messageType === IncomingMessageType.attachments
-    ) {
-      const discordAttachments = Array.from(
-        this._adapter.raw.attachments.values(),
-      ).map((attachment) => {
-        return this.getHandler().fetchAndStoreAttachment(attachment);
-      });
-      this._adapter.attachments = await Promise.all(discordAttachments);
-    }
-  }
-
-  /**
    * Retrieves the unique identifier for the current event.
    * If the message type is `attachments`, a prefixed ID is returned to handle
    * cases where multiple events are emitted for attachments.
@@ -140,16 +127,26 @@ export default class DiscordEventWrapper extends EventWrapper<
    *
    * @return An object containing the sender's details
    */
-  getSenderInfo(): { avatarUrl: string; firstName: string; lastName: string } {
+  getSenderInfo(): {
+    avatarUrl: string | null;
+    firstName: string;
+    lastName: string;
+  } {
     const event = this._adapter.raw;
     // Set the sender based on the event channel type
-    if (event.channel.type === DiscordTypes.ChannelType.GuildText) {
+    if (
+      event.channel &&
+      event.channel.type === DiscordTypes.ChannelType.GuildText
+    ) {
       return {
         avatarUrl: event.channel.guild.iconURL(),
         firstName: event.channel.guild.name,
         lastName: event.channel.name,
       };
-    } else if (event.channel.type === DiscordTypes.ChannelType.DM) {
+    } else if (
+      event.channel &&
+      event.channel.type === DiscordTypes.ChannelType.DM
+    ) {
       if (event instanceof DiscordTypes.Message) {
         return {
           avatarUrl: event.author.displayAvatarURL(),
@@ -163,9 +160,9 @@ export default class DiscordEventWrapper extends EventWrapper<
           lastName: '\u200B',
         };
       }
-    } else {
-      throw new Error('Unable to extract event profile!');
     }
+
+    throw new Error('Unable to extract sender profile!');
   }
 
   /**
@@ -175,6 +172,10 @@ export default class DiscordEventWrapper extends EventWrapper<
    * @return The foreign ID of the sender.
    */
   getSenderForeignId(): string {
+    if (!this._adapter.raw.channel?.id) {
+      throw new Error('Unable to get the sender foreign id');
+    }
+
     return this._adapter.raw.channel.id;
   }
 
@@ -186,7 +187,11 @@ export default class DiscordEventWrapper extends EventWrapper<
    * @return The foreign ID of the recipient.
    */
   getRecipientForeignId(): string {
-    return this._adapter.raw.channel.id;
+    if (!this._adapter.raw.channel?.id) {
+      throw new Error('Unable to get the recipient foreign id');
+    }
+
+    return this._adapter.raw.channel?.id;
   }
 
   /**
@@ -201,7 +206,7 @@ export default class DiscordEventWrapper extends EventWrapper<
       if (this._adapter.attachments.length === 0) {
         return {
           type: PayloadType.attachments,
-          attachments: {
+          attachment: {
             type: FileType.unknown,
             payload: { id: null },
           },
@@ -219,7 +224,7 @@ export default class DiscordEventWrapper extends EventWrapper<
 
       return {
         type: PayloadType.attachments,
-        attachments: attachmentPayloads[0],
+        attachment: attachmentPayloads[0],
       };
     }
     return undefined;
@@ -242,7 +247,7 @@ export default class DiscordEventWrapper extends EventWrapper<
       ) as DiscordTypes.ButtonComponent;
       return {
         postback,
-        text: component.label,
+        text: component.label || '',
       };
     } else if (this._adapter.messageType === IncomingMessageType.attachments) {
       if (this._adapter.attachments.length === 0) {
@@ -274,24 +279,6 @@ export default class DiscordEventWrapper extends EventWrapper<
   }
 
   /**
-   * Retrieves the list of attachments associated with the current event.
-   * Each attachment includes its type, URL, and a unique attachment ID.
-   *
-   * @return An array of `AttachmentPayload` objects
-   */
-  getAttachments(): AttachmentPayload[] {
-    if (this._adapter.messageType == IncomingMessageType.attachments) {
-      return this._adapter.attachments.map((attachment) => ({
-        type: Attachment.getTypeByMime(attachment.type),
-        payload: {
-          id: attachment.id,
-        },
-      }));
-    }
-    return [];
-  }
-
-  /**
    * Retrieves the list of delivered message IDs.
    * Since Discord does not support delivery receipts, this function always returns an empty array.
    *
@@ -309,14 +296,5 @@ export default class DiscordEventWrapper extends EventWrapper<
    */
   getWatermark(): number {
     return this._adapter.raw.createdTimestamp;
-  }
-
-  setMessageType(
-    messageType:
-      | IncomingMessageType.message
-      | IncomingMessageType.postback
-      | IncomingMessageType.attachments,
-  ): void {
-    this._adapter.messageType = messageType;
   }
 }
