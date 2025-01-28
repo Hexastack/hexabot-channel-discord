@@ -71,7 +71,7 @@ export default class DiscordEventWrapper extends EventWrapper<
   protected readonly logger: LoggerService;
 
   constructor(handler: DiscordChannelHandler, event: Discord.IncomingEvent) {
-    if (!event.channel?.type) {
+    if (!event.channel || !(event.channel.type in DiscordTypes.ChannelType)) {
       throw new Error('Unable to determine the channel type');
     }
 
@@ -250,7 +250,10 @@ export default class DiscordEventWrapper extends EventWrapper<
         text: component.label || '',
       };
     } else if (this._adapter.messageType === IncomingMessageType.attachments) {
-      if (this._adapter.attachments.length === 0) {
+      if (
+        !this._adapter.attachments ||
+        this._adapter.attachments.length === 0
+      ) {
         return {
           type: PayloadType.attachments,
           serialized_text: `attachment:${FileType.unknown}`,
