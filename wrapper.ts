@@ -13,13 +13,12 @@ import EventWrapper from '@/channel/lib/EventWrapper';
 import { FileType } from '@/chat/schemas/types/attachment';
 import {
   IncomingMessageType,
-  PayloadType,
   StdEventType,
   StdIncomingMessage,
 } from '@/chat/schemas/types/message';
 import { Payload } from '@/chat/schemas/types/quick-reply';
 import { LoggerService } from '@/logger/logger.service';
-
+import { PayloadType } from '@/chat/schemas/types/button';
 import { DiscordChannelHandler } from './index.channel';
 import { DISCORD_CHANNEL_NAME } from './settings';
 import { Discord } from './types';
