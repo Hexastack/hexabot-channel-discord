@@ -242,9 +242,13 @@ export default class DiscordEventWrapper extends EventWrapper<
       };
     } else if (this._adapter.messageType === IncomingMessageType.postback) {
       const postback = this._adapter.raw.customId;
-      const component = this._adapter.raw.message.components[0].components.find(
-        ({ customId }) => customId === postback,
+      const oldRow = this._adapter.raw.message
+        .components[0] as DiscordTypes.ActionRowData<DiscordTypes.MessageActionRowComponentData>;
+      const component = oldRow.components.find(
+        (component: DiscordTypes.ButtonComponent) =>
+          component.customId === postback,
       ) as DiscordTypes.ButtonComponent;
+
       return {
         postback,
         text: component.label || '',

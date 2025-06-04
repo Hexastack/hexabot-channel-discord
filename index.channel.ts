@@ -274,7 +274,8 @@ export class DiscordChannelHandler extends ChannelHandler<
   ): Promise<void> {
     const newRow =
       new ActionRowBuilder<DiscordTypes.MessageActionRowComponentBuilder>();
-    const oldRow = interaction.message.components[0];
+    const oldRow = interaction.message
+      .components[0] as DiscordTypes.ActionRowData<DiscordTypes.MessageActionRowComponentData>;
     oldRow.components.forEach((component: DiscordTypes.ButtonComponent) => {
       const isSelected = component.customId === interaction.customId;
       const discordButton = new ButtonBuilder()
