@@ -1,0 +1,21 @@
+{
+  "discord": {
+    "Discord Channel": "Discord Channel",
+    "Bot token credential": "Bot token credential",
+    "Credential containing the Discord bot token used for Gateway and REST calls.": "Credential containing the Discord bot token used for Gateway and REST calls.",
+    "Application ID": "Application ID",
+    "Discord application/client ID. Used to identify the bot and validate component interactions.": "Discord application/client ID. Used to identify the bot and validate component interactions.",
+    "Allowed guild IDs": "Allowed guild IDs",
+    "Optional comma-separated Discord server IDs. When set, guild messages from other servers are ignored.": "Optional comma-separated Discord server IDs. When set, guild messages from other servers are ignored.",
+    "Enable direct messages": "Enable direct messages",
+    "Allow users to talk to the bot in Discord DMs.": "Allow users to talk to the bot in Discord DMs.",
+    "Enable guild mentions": "Enable guild mentions",
+    "Allow server messages that mention the bot to start or continue a Hexabot conversation.": "Allow server messages that mention the bot to start or continue a Hexabot conversation.",
+    "Disable buttons after click": "Disable buttons after click",
+    "Disable Discord message buttons after a user selects one, keeping link buttons enabled.": "Disable Discord message buttons after a user selects one, keeping link buttons enabled.",
+    "Thread inactivity (hours)": "Thread inactivity (hours)",
+    "Automatically start a new thread when the last message is older than this threshold.": "Automatically start a new thread when the last message is older than this threshold."
+  },
+  "View More": "View More",
+  "Options": "Options"
+}

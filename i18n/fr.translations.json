@@ -1,0 +1,21 @@
+{
+  "discord": {
+    "Discord Channel": "Canal Discord",
+    "Bot token credential": "Identifiant du jeton du bot",
+    "Credential containing the Discord bot token used for Gateway and REST calls.": "Identifiant contenant le jeton du bot Discord utilise pour les appels Gateway et REST.",
+    "Application ID": "ID de l'application",
+    "Discord application/client ID. Used to identify the bot and validate component interactions.": "ID de l'application/client Discord. Utilise pour identifier le bot et valider les interactions des composants.",
+    "Allowed guild IDs": "IDs des serveurs autorises",
+    "Optional comma-separated Discord server IDs. When set, guild messages from other servers are ignored.": "IDs optionnels des serveurs Discord, separes par des virgules. Lorsqu'ils sont renseignes, les messages des autres serveurs sont ignores.",
+    "Enable direct messages": "Activer les messages directs",
+    "Allow users to talk to the bot in Discord DMs.": "Autorise les utilisateurs a parler au bot dans les messages directs Discord.",
+    "Enable guild mentions": "Activer les mentions serveur",
+    "Allow server messages that mention the bot to start or continue a Hexabot conversation.": "Autorise les messages serveur qui mentionnent le bot a demarrer ou continuer une conversation Hexabot.",
+    "Disable buttons after click": "Desactiver les boutons apres clic",
+    "Disable Discord message buttons after a user selects one, keeping link buttons enabled.": "Desactive les boutons Discord apres la selection d'un utilisateur, tout en gardant les boutons de lien actifs.",
+    "Thread inactivity (hours)": "Inactivite du fil (heures)",
+    "Automatically start a new thread when the last message is older than this threshold.": "Demarre automatiquement un nouveau fil lorsque le dernier message depasse ce seuil."
+  },
+  "View More": "Voir plus",
+  "Options": "Options"
+}
