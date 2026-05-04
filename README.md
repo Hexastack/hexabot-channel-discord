@@ -1,168 +1,237 @@
 # Hexabot Discord Channel Extension
 
-Welcome to the [Hexabot](https://hexabot.ai/) Discord Channel Extension! This extension enables seamless integration of your Hexabot chatbot with Discord, allowing you to engage with your audience on this popular communication platform.
+`hexabot-channel-discord` connects Hexabot v3 to Discord through the Discord Gateway. It lets a Hexabot bot answer direct messages and server messages that mention the Discord bot, while preserving Hexabot's v3 channel contracts for source settings, subscribers, attachments, and outbound message envelopes.
 
-Not yet familiar with [Hexabot](https://hexabot.ai/)? It's an open-source chatbot / agent solution that allows users to create and manage AI-powered, multi-channel, and multilingual chatbots with ease. If you would like to learn more, please visit the [official GitHub repo](https://github.com/Hexastack/Hexabot/).
+This implementation is built for Hexabot v3. It is not a direct port of the v2 channel SDK package.
 
 ## Features
 
-- **Dual Interaction Channels**:
-  - **Direct Messages**: Personal 1-on-1 bot conversations
-  - **Server Interactions**: Interactions begin with a mention to the bot, ensuring context-aware communication.
-- **User Data Retrieval**: Fetch essential user information such as username, avatar, roles, and server-specific details.
-- **Flexible Communication**:
-  - **Private Conversations**: Seamless direct messaging
-  - **Server Chat**: Mention-based interactions
-- **Rich Messaging Features**:
-  - **Buttons**: Add interactive elements to guide user actions
-  - **Embeds**: Create visually appealing message presentations
-  - **Context Management**: Intelligent response handling in different communication contexts
+- **Direct messages**
+  - Users can talk to the bot in 1-on-1 Discord DMs.
+  - Each Discord DM channel maps to one Hexabot subscriber/thread.
 
-💡 **Note**: Before users can interact with the bot via direct messages, it must be added to a server. Direct messaging is only possible after the bot is part of at least one Discord server.
+- **Server conversations**
+  - Server messages are processed only when they mention the bot.
+  - Each Discord text channel maps to one Hexabot subscriber/thread, so workflow replies and operator replies stay in the public channel where the conversation started.
+
+- **Interactive messages**
+  - Hexabot quick replies are rendered as Discord primary buttons.
+  - Hexabot postback buttons are rendered as Discord secondary buttons.
+  - Web URL buttons are rendered as Discord link buttons.
+  - Button clicks are decoded back into v3 quick reply or postback inbound events.
+
+- **Rich outbound support**
+  - Text messages
+  - Quick replies
+  - Buttons
+  - Attachments
+  - Lists
+  - Carousels
+  - Typing indicators
+
+- **Attachments**
+  - Inbound Discord attachments are downloaded and stored through Hexabot's attachment pipeline.
+  - Outbound Hexabot attachments are exposed through the standard channel public URL flow.
+
+- **Operational health**
+  - Active sources report missing required settings.
+  - Gateway connection state is reflected in integration health details.
 
 ## Prerequisites
 
-Before you begin, ensure you have:
+Before installing the channel, make sure you have:
 
-- A **Discord account**
-- Basic knowledge of **APIs** and **web development** (optional but recommended)
-- A **server** to host your chatbot
-- **HTTPS** enabled on your server
-- Cloned Hexabot locally (refer to [https://github.com/hexastack/hexabot](https://github.com/hexastack/hexabot))
+- A Discord account.
+- A Discord server where you can invite a bot.
+- A Hexabot v3 project using `@hexabot-ai/api`.
+- Node.js `20.19.x`, matching the Hexabot v3 engine requirement.
+- Access to Discord Developer Portal.
 
 ## Installation
 
-Navigate to your Hexabot project directory and install the extension:
+Install the extension and its Discord peer dependency in the workspace or deployment that runs Hexabot API:
 
 ```sh
-cd ~/projects/my-chatbot/
-
-npm install --save hexabot-channel-discord
-
-hexabot dev
+npm install hexabot-channel-discord discord.js
 ```
 
-## Step 1: Create a Discord Developer Application
+For local development inside this repository, the extension lives under:
 
-1. **Access Discord Developer Portal**:
+```txt
+src/extensions/channels/hexabot-channel-discord
+```
 
-   - Navigate to [Discord Developer Portal](https://discord.com/developers/applications)
-   - Click **"New Application"**
+Restart the Hexabot API after installation. The channel appears with the name:
 
-2. **Configure Application**:
+```txt
+discord
+```
 
-   - Name your application
-   - Accept Developer Terms of Service
+## Discord Application Setup
 
-3. **Create Bot**:
+### 1. Create a Discord Application
 
-   - Go to **"Bot"** section
-   - Click **"Add Bot"**
-   - Customize bot settings within **General Information**
+1. Open [Discord Developer Portal](https://discord.com/developers/applications).
+2. Click **New Application**.
+3. Choose a name for your bot application.
+4. Open **General Information** and copy the **Application ID**.
 
-## Step 2: Generate Bot Token
+You will use this value in the Hexabot Discord source setting `application_id`.
 
-1. In the **"Bot"** section, find **"Token"**
-2. Click **"Copy"** to retrieve your bot token
-3. **IMPORTANT**: Keep this token secret
+### 2. Create and Configure the Bot
 
-## Step 3: Intents Configuration
+1. In the application sidebar, open **Bot**.
+2. Click **Add Bot** if one does not already exist.
+3. Customize the bot name and icon if needed.
+4. Reset or copy the bot token.
+5. Store the token as a Hexabot credential. Do not paste the token directly into source settings.
 
-- **Description**: Configure which Discord events your bot can access
-- **Recommended Intents**:
-  - Server Members
-  - Message Content
-  - Guild Messages
+### 3. Enable Gateway Intents
 
-1. **Access Bot Section**
-   - In Discord Developer Portal, navigate to **"Bot"**
-2. **Select the bot Intents**
-   - Under **Privileged Gateway Intents**, select the desired intents
+In **Bot > Privileged Gateway Intents**, enable:
 
-## Step 4: Configure OAuth2 for Server Invitation
+- **Message Content Intent**
 
-1. **Access OAuth2 Section**:
+For the channel behavior implemented here, the bot also connects with these non-privileged Gateway intents:
 
-   - In Discord Developer Portal, navigate to **"OAuth2"**
-   - Click on **"URL Generator"**
+- `Guilds`
+- `GuildMessages`
+- `DirectMessages`
 
-2. **Select Scopes**:
+The Message Content privileged intent is required because Discord does not expose message text to most bots without it.
 
-   - Check **"bot"**
+### 4. Generate the Server Invite URL
 
-3. **Select Bot Permissions**:
+1. Open **OAuth2 > URL Generator**.
+2. Select the `bot` scope.
+3. Select only the permissions your deployment needs.
 
-   - Choose appropriate permissions based on bot functionality:
-     - Send Messages
-     - Manage Messages
-     - Embed Links
-     - Attach Files
-     - Read Message History
-     - Use Slash Commands
+Recommended permissions:
 
-4. **Generate Invitation URL**:
+- View Channels
+- Send Messages
+- Read Message History
+- Attach Files
+- Embed Links
 
-   - Scroll down, the **"Generated URL"** will appear
-   - Copy this URL
+Copy the generated URL, open it in a browser, and invite the bot to the target server.
 
-5. **Add Bot to Server**:
+## Hexabot Source Configuration
 
-   - Open the generated URL in a web browser
-   - Select the target server
-   - Confirm permissions
-   - Authorize bot installation
+Create a Hexabot source using the `discord` channel.
 
-💡 **Pro Tip**: Always use the principle of least privilege. Only select permissions your bot absolutely needs.
+Required settings:
 
-## Configuration
+- `bot_token`: credential containing the Discord bot token.
+- `application_id`: Discord application/client ID from the Developer Portal.
 
-### Settings
+Optional settings:
 
-1. **Bot Token**
+- `allowed_guild_ids`: comma-separated Discord server IDs. When set, guild messages from all other servers are ignored.
+- `enable_direct_messages`: defaults to `true`.
+- `enable_guild_mentions`: defaults to `true`.
+- `disable_buttons_after_click`: defaults to `true`.
+- `thread_inactivity_hours`: defaults to `24`.
 
-   - **Description**: Your Discord bot's authentication token
-   - **Mandatory**: Yes
-   - **How to Obtain**: Discord Developer Portal > Bot section
-
-2. **Application ID**
-
-   - **Description**: Your application's unique identifier
-   - **How to Obtain**: Discord Developer Portal > General Information
+Use one Hexabot source per Discord bot application/token.
 
 ## Usage
 
-Once configured, your Hexabot will be available on Discord with:
+### Direct Messages
 
-- Mention-based interactions for server environments
-- Automated responses
-- User data retrieval
+After the bot is invited to at least one server, a user can open a direct message with the bot and send a message. Hexabot receives it as a v3 text event and replies in the same DM channel.
 
-### Testing Integration
+### Server Messages
 
-1. Invite bot to server
-2. Verify mention-based interactions work only in servers
-3. Verify direct messages work only in private discussions
-4. Check user data retrieval
+In a server text channel, mention the bot:
 
-## Contributing
+```txt
+@YourBot hello
+```
 
-We welcome community contributions!
+The mention is removed before the text reaches the workflow, so Hexabot receives:
 
-- Report bugs
-- Suggest features
-- Submit pull requests
+```txt
+hello
+```
 
-Please review [Contribution Guidelines](./CONTRIBUTING.md)
+Messages that do not mention the bot are ignored.
 
-Join our [Discord](https://discord.gg/rNb9t2MFkG)
+### Buttons and Quick Replies
+
+Quick replies and postback buttons are sent as Discord message components. When a user clicks one, the channel emits the matching v3 inbound event:
+
+- Quick replies become `IncomingMessageType.quickReply`.
+- Postback buttons become `IncomingMessageType.postback`.
+- Link buttons open URLs and do not emit postbacks.
+
+If `disable_buttons_after_click` is enabled, non-link buttons on the Discord message are disabled after the first click.
+
+### Lists and Carousels
+
+Discord does not have a native carousel format. Lists and carousels are rendered as one or more Discord embeds. Paginated lists include a final **View More** button when more content exists.
+
+## Development
+
+From the extension directory:
+
+```sh
+npm run typecheck
+npm test -- --runInBand
+npm run build
+```
+
+The package build must produce:
+
+- `dist/index.js`
+- `dist/index.channel.js`
+
+The extension includes:
+
+- `.github/workflows/release.yml`
+- `.gitignore`
+- `.npmignore`
+- `i18n/en.translations.json`
+- `i18n/fr.translations.json`
+
+## Release
+
+The package keeps the v2-style release scripts:
+
+```sh
+npm run release:patch
+npm run release:minor
+```
+
+The GitHub Actions release workflow publishes to npm when a `v*` tag is pushed and `NPM_TOKEN` is configured in repository secrets.
+
+## Troubleshooting
+
+### The bot connects but does not read messages
+
+Confirm that **Message Content Intent** is enabled in Discord Developer Portal and that the bot was restarted after enabling it.
+
+### Server messages are ignored
+
+Confirm that:
+
+- The message mentions the bot.
+- `enable_guild_mentions` is enabled.
+- The server ID is included in `allowed_guild_ids`, or `allowed_guild_ids` is empty.
+- The bot has access to the channel.
+
+### Direct messages are ignored
+
+Confirm that:
+
+- `enable_direct_messages` is enabled.
+- The user has permission to message the bot.
+- The bot is installed in at least one shared server.
+
+### Attachment replies fail
+
+Confirm that your Hexabot public URL configuration allows Discord to fetch the channel public attachment URL.
 
 ## License
 
-Licensed under GNU Affero General Public License v3.0 (AGPLv3) with additional terms:
-
-1. "Hexabot" is a trademark of Hexastack
-2. Derivative works must attribute Hexastack and Hexabot
-
----
-
-_Happy Bot Building!_
+Licensed under the Hexabot Fair Core License. See [LICENSE.md](./LICENSE.md).
